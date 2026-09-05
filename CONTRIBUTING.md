@@ -1,49 +1,21 @@
-Looking to report an issue/bug or make a feature request? Please refer to the [README file](https://github.com/mihonapp/mihon#issues-feature-requests-and-contributing).
+# 为 Shihon 做贡献 · Contributing · 貢献
 
----
+请将 Shihon 的问题和功能建议提交到 [本项目 Issues](https://github.com/conezcc/Shihon/issues)。报告请附版本、设备、Android/SmartOS 版本、复现步骤；墨水屏问题请同时说明阅读方向、缩放模式及刷新设置。
 
-Thanks for your interest in contributing to Mihon!
+欢迎代码与翻译 PR。运行 `python3 scripts/check_translations.py` 和 `./gradlew spotlessCheck testDebugUnitTest verifySqlDelightMigration`，并对涉及的阅读操作做实机验证。测试只能证明已覆盖的逻辑，请区分代码检查、模拟测试与实机复现。
 
+翻译资源在 `i18n/src/commonMain/moko-resources/`：`base` 为英文、`zh-rCN` 为简体中文、`ja` 为日文。新增文案须同步三语，保留格式占位符并避免硬编码界面文字。README.md 是中文主文档；README.en.md 与 README.ja.md 应保持功能说明一致。Shihon 专属翻译通过本仓库 PR 维护。
 
-# Code contributions
+签名密钥、密码、个人备份及下载内容不得提交。构建环境与签名流程见 [构建指南](docs/BUILDING.md)。保留第三方版权和许可证，遵守 [行为准则](CODE_OF_CONDUCT.md)。
 
-Pull requests are welcome!
+## English
 
-If you're interested in taking on [an open issue](https://github.com/mihonapp/mihon/issues), please comment on it so others are aware.
-You do not need to ask for permission nor an assignment.
+File Shihon issues in this repository with version, device, firmware and reproduction steps. For reader issues include reading direction, scaling and refresh settings. Code and translation PRs are welcome. Run the translation checker, Spotless, unit tests and migration verification above; validate affected reader behavior on hardware and distinguish tests from device reproduction.
 
-## Prerequisites
+Keep Chinese, English and Japanese resources and READMEs in sync. Preserve placeholders, upstream copyrights and dependency licenses. Never commit signing keys, passwords, personal backups or downloaded content. See the build guide and code of conduct.
 
-Before you start, please note that the ability to use following technologies is **required** and that existing contributors will not actively teach them to you.
+## 日本語
 
-- Basic [Android development](https://developer.android.com/)
-- [Kotlin](https://kotlinlang.org/)
+本リポジトリへバージョン・端末・ファームウェア・再現手順を添えて報告してください。読書画面の問題には読む方向、拡大設定、リフレッシュ設定も必要です。コードや翻訳の PR を歓迎します。上記の検証を実行し、変更した操作を実機でも確認してください。
 
-### Tools
-
-- [Android Studio](https://developer.android.com/studio)
-- Emulator or phone with developer options enabled to test changes.
-
-## Getting help
-
-- Join [the Discord server](https://discord.gg/mihon) for online help and to ask questions while developing.
-
-# Translations
-
-Translations are done externally via Weblate. See [our website](https://mihon.app/docs/contribute#translation) for more details.
-
-
-# Forks
-
-Forks are allowed so long as they abide by [the project's LICENSE](https://github.com/mihonapp/mihon/blob/main/LICENSE).
-
-When creating a fork, remember to:
-
-- To avoid confusion with the main app:
-    - Change the app name
-    - Change the app icon
-    - Change or disable the [app update checker](https://github.com/mihonapp/mihon/blob/main/app/src/main/java/eu/kanade/tachiyomi/data/updater/AppUpdateChecker.kt)
-- To avoid installation conflicts:
-    - Change the `applicationId` in [`build.gradle.kts`](https://github.com/mihonapp/mihon/blob/main/app/build.gradle.kts)
-- To avoid having your data polluting the main app's analytics and crash report services:
-    - If you want to use Firebase analytics, replace [`google-services.json`](https://github.com/mihonapp/mihon/blob/main/app/src/standard/google-services.json) with your own
+中英日のリソースと README を同期し、書式指定子、上流の著作権、依存ライセンスを保持してください。署名鍵・パスワード・個人バックアップ・ダウンロードしたコンテンツはコミットしないでください。

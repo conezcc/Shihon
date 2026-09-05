@@ -99,3 +99,4 @@
     public <init>();
     public void destroy();
 }
+-keep class ai.onnxruntime.** { *; }

@@ -34,6 +34,10 @@
         <item quantity="one">%1$s remaining</item>
         <item quantity="other">%1$s remaining</item>
     </plurals>
+    <plurals name="preprocessing_queue_summary">
+        <item quantity="one">%d chapter waiting to build</item>
+        <item quantity="other">%d chapters waiting to build</item>
+    </plurals>
 
     <plurals name="day">
         <item quantity="one">1 day</item>

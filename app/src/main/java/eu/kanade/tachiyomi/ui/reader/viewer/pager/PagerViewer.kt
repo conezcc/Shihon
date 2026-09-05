@@ -16,10 +16,17 @@ import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.viewer.PageCropProfiles
+import eu.kanade.tachiyomi.ui.reader.viewer.PageCropState
+import eu.kanade.tachiyomi.ui.reader.viewer.PagePanDirection
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion
+import eu.kanade.tachiyomi.util.system.SmartOsPageTurnEffect
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import mihon.app.di.appGraph
 import tachiyomi.core.common.util.system.logcat
 import kotlin.math.min
@@ -47,6 +54,9 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      */
     val config = PagerConfig(this, scope, readerPreferences)
 
+    private val useSmoothPageTransitions: Boolean
+        get() = config.usePageTransitions && (this is VerticalPagerViewer || !config.useSmartOsWaterRipple)
+
     /**
      * Adapter of the pager.
      */
@@ -56,6 +66,13 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Currently active item. It can be a chapter page or a chapter transition.
      */
     private var currentPage: Any? = null
+
+    private var pendingPageSelection: Pair<ReaderPage, Boolean>? = null
+
+    private var currentPageSelection: Pair<ReaderPage, Boolean>? = null
+
+    private val _pageCropState = MutableStateFlow(PageCropState())
+    val pageCropState: StateFlow<PageCropState> = _pageCropState
 
     /**
      * Viewer chapters to set when the pager enters idle mode. Otherwise, if the view was settling
@@ -91,6 +108,9 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
 
         override fun onPageScrollStateChanged(state: Int) {
             isIdle = state == ViewPager.SCROLL_STATE_IDLE
+            if (isIdle) {
+                dispatchPendingPageSelection()
+            }
         }
     }
 
@@ -140,6 +160,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             refreshAdapter()
         }
 
+        config.textEnhancementChangedListener = { strength ->
+            pager.children
+                .filterIsInstance<PagerPageHolder>()
+                .forEach { it.updateTextEnhancement(strength) }
+        }
+
         config.navigationModeChangedListener = {
             val showOnStart = config.navigationOverlayOnStart || config.forceNavigationOverlay
             activity.binding.navigationOverlay.setNavigation(config.navigator, showOnStart)
@@ -171,6 +197,69 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             .filterIsInstance(PagerPageHolder::class.java)
             .firstOrNull { it.item == page }
 
+    internal fun onPageViewportChanged(holder: PagerPageHolder) {
+        if (holder.item != currentPage) return
+        val state = holder.currentPageCropState() ?: PageCropState()
+        _pageCropState.value = state.copy(
+            available = state.available,
+            active = !config.imageCropBorders && config.pageCropProfiles.containsKey(state.ratio),
+        )
+    }
+
+    internal fun onPageImageReady(holder: PagerPageHolder) {
+        if (holder.item == currentPage && isIdle) {
+            dispatchPendingPageSelection()
+            currentPageSelection
+                ?.takeIf { (page) -> page == holder.item }
+                ?.let { (_, forward) -> holder.onPageSelected(forward) }
+        }
+    }
+
+    internal fun onPageCropProfilesChanged() {
+        val page = currentPage as? ReaderPage ?: return
+        getPageHolder(page)?.let(::onPageViewportChanged)
+    }
+
+    internal fun onCropBordersChanged(enabled: Boolean) {
+        if (!enabled) return
+        removeCurrentPageCrop()
+        _pageCropState.value = _pageCropState.value.copy(active = false)
+    }
+
+    fun toggleCurrentPageCrop() {
+        val page = currentPage as? ReaderPage ?: return
+        val holder = getPageHolder(page) ?: return
+        val state = holder.currentPageCropState() ?: return
+        val ratio = state.ratio ?: return
+        val profiles = config.pageCropProfiles.toMutableMap()
+        val active = !config.imageCropBorders && profiles.containsKey(ratio)
+
+        if (active) {
+            profiles.remove(ratio)
+            readerPreferences.pageCropProfiles.set(PageCropProfiles.serialize(profiles))
+            holder.resetPageCrop()
+        } else {
+            if (config.imageCropBorders || !profiles.containsKey(ratio)) {
+                val profile = holder.capturePageCropProfile() ?: return
+                profiles[ratio] = profile
+                readerPreferences.pageCropProfiles.set(PageCropProfiles.serialize(profiles))
+            }
+            if (config.imageCropBorders) {
+                readerPreferences.cropBorders.set(false)
+            }
+        }
+        _pageCropState.value = state.copy(available = true, active = !active)
+    }
+
+    fun removeCurrentPageCrop() {
+        val ratio = _pageCropState.value.ratio ?: return
+        if (!config.pageCropProfiles.containsKey(ratio)) return
+        val profiles = config.pageCropProfiles.toMutableMap()
+        profiles.remove(ratio)
+        readerPreferences.pageCropProfiles.set(PageCropProfiles.serialize(profiles))
+        _pageCropState.value = _pageCropState.value.copy(active = false)
+    }
+
     /**
      * Called when a new page (either a [ReaderPage] or [ChapterTransition]) is marked as active
      */
@@ -178,20 +267,30 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         val page = adapter.items.getOrNull(position)
         if (page != null && currentPage != page) {
             val allowPreload = checkAllowPreload(page as? ReaderPage)
-            val forward = when {
-                currentPage is ReaderPage && page is ReaderPage -> {
-                    // if both pages have the same number, it's a split page with an InsertPage
-                    if (page.number == (currentPage as ReaderPage).number) {
-                        // the InsertPage is always the second in the reading direction
-                        page is InsertPage
-                    } else {
-                        page.number > (currentPage as ReaderPage).number
-                    }
-                }
-                currentPage is ChapterTransition.Prev && page is ReaderPage ->
-                    false
-                else -> true
+            // Page numbers restart in every chapter and are shared by split pages. Compare
+            // positions in the same live adapter list instead (RTL reverses that list).
+            val forward = isForwardPageSelection(
+                items = adapter.items,
+                previous = currentPage,
+                position = position,
+                rightToLeft = this is R2LPagerViewer,
+            ) ?: (currentPage !is ChapterTransition.Prev)
+            if (
+                currentPage is ReaderPage &&
+                page is ReaderPage &&
+                this !is VerticalPagerViewer &&
+                config.useSmartOsWaterRipple
+            ) {
+                @Suppress("DEPRECATION")
+                val displayRotation = activity.windowManager.defaultDisplay.rotation
+                SmartOsPageTurnEffect.prepare(
+                    forward = forward,
+                    rightToLeft = this is R2LPagerViewer,
+                    displayRotation = displayRotation,
+                    speed = config.waterRippleSpeed,
+                )
             }
+            (currentPage as? ReaderPage)?.let(::getPageHolder)?.onPageDeselected()
             currentPage = page
             when (page) {
                 is ReaderPage -> onReaderPageSelected(page, allowPreload, forward)
@@ -228,8 +327,14 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         logcat { "onReaderPageSelected: ${page.number}/${pages.size}" }
         activity.onPageSelected(page)
 
-        // Notify holder of page change
-        getPageHolder(page)?.onPageSelected(forward)
+        currentPageSelection = page to forward
+        pendingPageSelection = currentPageSelection
+        getPageHolder(page)?.let(::onPageViewportChanged) ?: run {
+            _pageCropState.value = PageCropState()
+        }
+        if (isIdle) {
+            pager.post(::dispatchPendingPageSelection)
+        }
 
         // Skip preload on inserts it causes unwanted page jumping
         if (page is InsertPage) {
@@ -244,11 +349,25 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         }
     }
 
+    private fun dispatchPendingPageSelection() {
+        if (!isIdle) return
+        val (page, forward) = pendingPageSelection ?: return
+        if (page != currentPage) {
+            pendingPageSelection = null
+            return
+        }
+        val holder = getPageHolder(page) ?: return
+        pendingPageSelection = null
+        holder.onPageSelected(forward)
+        onPageViewportChanged(holder)
+    }
+
     /**
      * Called when a [ChapterTransition] is marked as active. It request the
      * preload of the destination chapter of the transition.
      */
     private fun onTransitionSelected(transition: ChapterTransition) {
+        currentPageSelection = null
         logcat { "onTransitionSelected: $transition" }
         val toChapter = transition.to
         if (toChapter != null) {
@@ -303,7 +422,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         val position = adapter.items.indexOf(page)
         if (position != -1) {
             val currentPosition = pager.currentItem
-            pager.setCurrentItem(position, true)
+            pager.setCurrentItem(position, useSmoothPageTransitions)
             // manually call onPageChange since ViewPager listener is not triggered in this case
             if (currentPosition == position) {
                 onPageChange(position)
@@ -331,13 +450,22 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Moves to the page at the right.
      */
     protected open fun moveRight() {
+        val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
+        val verticalDirection = if (this is R2LPagerViewer) PagePanDirection.UP else PagePanDirection.DOWN
+        val navigatingBackward = this is R2LPagerViewer
+        if (
+            config.navigatePageSegments &&
+            (!navigatingBackward || config.navigatePageSegmentsBackward) &&
+            holder?.panForPageTurn(
+                PagePanDirection.RIGHT,
+                verticalDirection,
+                config.navigatePageSegmentsSmoothly,
+            ) == true
+        ) {
+            return
+        }
         if (pager.currentItem != adapter.count - 1) {
-            val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && holder.canPanRight()) {
-                holder.panRight()
-            } else {
-                pager.setCurrentItem(pager.currentItem + 1, config.usePageTransitions)
-            }
+            pager.setCurrentItem(pager.currentItem + 1, useSmoothPageTransitions)
         }
     }
 
@@ -345,13 +473,22 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Moves to the page at the left.
      */
     protected open fun moveLeft() {
+        val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
+        val verticalDirection = if (this is R2LPagerViewer) PagePanDirection.DOWN else PagePanDirection.UP
+        val navigatingBackward = this !is R2LPagerViewer
+        if (
+            config.navigatePageSegments &&
+            (!navigatingBackward || config.navigatePageSegmentsBackward) &&
+            holder?.panForPageTurn(
+                PagePanDirection.LEFT,
+                verticalDirection,
+                config.navigatePageSegmentsSmoothly,
+            ) == true
+        ) {
+            return
+        }
         if (pager.currentItem != 0) {
-            val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && holder.canPanLeft()) {
-                holder.panLeft()
-            } else {
-                pager.setCurrentItem(pager.currentItem - 1, config.usePageTransitions)
-            }
+            pager.setCurrentItem(pager.currentItem - 1, useSmoothPageTransitions)
         }
     }
 

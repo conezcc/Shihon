@@ -61,6 +61,7 @@ metrox-viewmodel-compose = "1.4.2"
 mockk = "1.14.11"
 moko-resources = "0.26.4"
 okhttp = "5.5.0"
+onnxruntime = "1.27.0"
 okio = "3.18.1"
 photoView = "2.3.0"
 quickJs = "547f5b1597"
@@ -173,6 +174,7 @@ moko-resources = { module = "dev.icerock.moko:resources", version.ref = "moko-re
 natural-comparator = { module = "com.github.gpanther:java-nat-sort", version = "natural-comparator-1.1" }
 okhttp-brotli = { module = "com.squareup.okhttp3:okhttp-brotli", version.ref = "okhttp" }
 okhttp-core = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 okhttp-dnsOverHttps = { module = "com.squareup.okhttp3:okhttp-dnsoverhttps", version.ref = "okhttp" }
 okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 okhttp-zstd = { module = "com.squareup.okhttp3:okhttp-zstd", version.ref = "okhttp" }

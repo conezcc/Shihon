@@ -1,3 +1,18 @@
+# Shihon 更新记录
+
+## 0.1 — 2026-09-05
+
+- 首个正式发布准备：专用发布签名、GitHub 自动构建与 Release 草稿流程。
+- 完整中文、英文、日文界面资源及三语 README。
+- 墨水屏刷新、SmartOS 4 水波纹、亮度/对比度/Gamma、文字增强与章节构建。
+- 横页预览、缩放平移、正反向分区阅读，保留最新跨章节方向与重复回调修复。
+- Shihon 项目链接、贡献指南、隐私和第三方声明。
+
+下方保留继承的 Mihon 更新记录；这些版本号不代表 Shihon 发布版本。
+The following is the inherited Mihon changelog, not Shihon release numbering.
+
+---
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

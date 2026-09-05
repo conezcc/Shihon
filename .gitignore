@@ -2,6 +2,8 @@
 .gradle
 .kotlin
 build
+__pycache__/
+*.pyc
 
 # IDE files
 *.iml
@@ -12,6 +14,11 @@ build
 # Configuration files
 keystore.properties
 local.properties
+*.keystore
+*.jks
+*.p12
+*.pem
+/dist/
 
 # macOS specific files
 .DS_Store

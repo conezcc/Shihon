@@ -1,0 +1,17 @@
+Shihon (紙本)
+Copyright 2026 conezcc and Shihon contributors
+
+Based on Mihon and Tachiyomi:
+Copyright 2015 Javier Tomás
+Copyright 2024 Mihon Open Source Project
+Additional contributors retain the copyrights in their contributions.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+The bundled PP-OCRv5_mobile_det model is by PaddlePaddle Authors and
+is licensed under Apache-2.0. Its source and checksum are recorded in
+app/src/main/assets/text_enhancement/NOTICE.txt.
+
+Dependency licenses are available in the application's open-source
+licenses screen. Shihon is an independent fork and is not an official
+Mihon release.

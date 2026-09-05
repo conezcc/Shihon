@@ -11,14 +11,12 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.databinding.DownloadListBinding
-import eu.kanade.tachiyomi.source.model.Page
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -214,8 +212,7 @@ class DownloadQueueViewModel(
                 delay(50.milliseconds)
             }
 
-            val progressFlows = download.pages!!.map(Page::progressFlow)
-            combine(progressFlows, Array<Int>::sum)
+            download.progressFlow
                 .distinctUntilChanged()
                 .debounce(50.milliseconds)
                 .collectLatest {

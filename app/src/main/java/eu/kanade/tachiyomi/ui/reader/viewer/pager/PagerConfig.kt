@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.viewer.PageAspectRatio
+import eu.kanade.tachiyomi.ui.reader.viewer.PageCropProfile
+import eu.kanade.tachiyomi.ui.reader.viewer.PageCropProfiles
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerConfig
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation
@@ -20,7 +23,7 @@ import kotlinx.coroutines.flow.onEach
 class PagerConfig(
     private val viewer: PagerViewer,
     scope: CoroutineScope,
-    readerPreferences: ReaderPreferences,
+    private val readerPreferences: ReaderPreferences,
 ) : ViewerConfig(readerPreferences, scope) {
 
     var theme = readerPreferences.readerTheme.get()
@@ -40,10 +43,36 @@ class PagerConfig(
     var imageCropBorders = false
         private set
 
-    var navigateToPan = false
+    var pageCropProfiles: Map<PageAspectRatio, PageCropProfile> = emptyMap()
+        private set
+
+    val landscapeZoomPreview: Boolean
+        get() = readerPreferences.navigateToPan.get()
+
+    val landscapeZoomPreviewDurationMillis: Long
+        get() = readerPreferences.landscapeZoomPreviewDurationMillis.get()
+            .coerceIn(
+                ReaderPreferences.LANDSCAPE_ZOOM_PREVIEW_DURATION_MIN_MILLIS,
+                ReaderPreferences.LANDSCAPE_ZOOM_PREVIEW_DURATION_MAX_MILLIS,
+            )
+            .toLong()
+
+    var navigatePageSegments = false
+        private set
+
+    var navigatePageSegmentsBackward = false
+        private set
+
+    var navigatePageSegmentsSmoothly = false
         private set
 
     var landscapeZoom = false
+        private set
+
+    var pagerHorizontalPadding = ReaderPreferences.PAGER_PADDING_MIN
+        private set
+
+    var pagerVerticalPadding = ReaderPreferences.PAGER_PADDING_MIN
         private set
 
     init {
@@ -63,13 +92,43 @@ class PagerConfig(
             .register({ zoomTypeFromPreference(it) }, { imagePropertyChangedListener?.invoke() })
 
         readerPreferences.cropBorders
-            .register({ imageCropBorders = it }, { imagePropertyChangedListener?.invoke() })
+            .register(
+                { imageCropBorders = it },
+                {
+                    viewer.onCropBordersChanged(it)
+                    imagePropertyChangedListener?.invoke()
+                },
+            )
+
+        readerPreferences.pageCropProfiles
+            .register(
+                { pageCropProfiles = PageCropProfiles.parse(it) },
+                { viewer.onPageCropProfilesChanged() },
+            )
 
         readerPreferences.navigateToPan
-            .register({ navigateToPan = it })
+            .register({}, { imagePropertyChangedListener?.invoke() })
+
+        readerPreferences.navigatePageSegments
+            .register({ navigatePageSegments = it })
+
+        readerPreferences.navigatePageSegmentsBackward
+            .register({ navigatePageSegmentsBackward = it })
+
+        readerPreferences.navigatePageSegmentsSmoothly
+            .register({ navigatePageSegmentsSmoothly = it })
 
         readerPreferences.landscapeZoom
             .register({ landscapeZoom = it }, { imagePropertyChangedListener?.invoke() })
+
+        readerPreferences.disablePagerSwipe
+            .register({ viewer.pager.isSwipeEnabled = !it })
+
+        readerPreferences.pagerHorizontalPadding
+            .register({ pagerHorizontalPadding = it }, { imagePropertyChangedListener?.invoke() })
+
+        readerPreferences.pagerVerticalPadding
+            .register({ pagerVerticalPadding = it }, { imagePropertyChangedListener?.invoke() })
 
         readerPreferences.navigationModePager
             .register({ navigationMode = it }, { updateNavigation(navigationMode) })

@@ -10,6 +10,7 @@ import androidx.core.graphics.alpha
 import androidx.core.graphics.blue
 import androidx.core.graphics.green
 import androidx.core.graphics.red
+import eu.kanade.tachiyomi.ui.reader.setting.ImageProcessing
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences.Companion.ColorFilterMode
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import tachiyomi.core.common.preference.getAndSet
@@ -22,6 +23,54 @@ import tachiyomi.presentation.core.util.collectAsState
 
 @Composable
 internal fun ColumnScope.ColorFilterPage(viewModel: ReaderSettingsViewModel) {
+    val imageBrightness by viewModel.preferences.imageBrightness.collectAsState()
+    SliderItem(
+        value = imageBrightness,
+        valueRange = ImageProcessing.BRIGHTNESS_MIN..ImageProcessing.BRIGHTNESS_MAX,
+        label = stringResource(MR.strings.pref_image_brightness),
+        valueString = imageBrightness.signedValue(),
+        onChange = viewModel.preferences.imageBrightness::set,
+        pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
+
+    val imageContrast by viewModel.preferences.imageContrast.collectAsState()
+    SliderItem(
+        value = imageContrast,
+        valueRange = ImageProcessing.CONTRAST_MIN..ImageProcessing.CONTRAST_MAX,
+        label = stringResource(MR.strings.pref_image_contrast),
+        valueString = imageContrast.signedValue(),
+        onChange = viewModel.preferences.imageContrast::set,
+        pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
+
+    val imageGamma by viewModel.preferences.imageGamma.collectAsState()
+    SliderItem(
+        value = imageGamma,
+        valueRange = ImageProcessing.GAMMA_MIN..ImageProcessing.GAMMA_MAX,
+        steps = 29,
+        label = stringResource(MR.strings.pref_image_gamma),
+        valueString = imageGamma.gammaValue(),
+        onChange = viewModel.preferences.imageGamma::set,
+        pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
+
+    val preprocessingEnabled by viewModel.preferences.preprocessingEnabled.collectAsState()
+    if (preprocessingEnabled) {
+        val textEnhancement by viewModel.preferences.textEnhancement.collectAsState()
+        SliderItem(
+            value = textEnhancement,
+            valueRange = ImageProcessing.TEXT_ENHANCEMENT_MIN..ImageProcessing.TEXT_ENHANCEMENT_MAX,
+            label = stringResource(MR.strings.pref_text_enhancement),
+            valueString = if (textEnhancement == ImageProcessing.TEXT_ENHANCEMENT_MIN) {
+                stringResource(MR.strings.off)
+            } else {
+                textEnhancement.toString()
+            },
+            onChange = viewModel.preferences.textEnhancement::set,
+            pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+    }
+
     val customBrightness by viewModel.preferences.customBrightness.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_custom_brightness),
@@ -131,3 +180,7 @@ private const val ALPHA_MASK: Long = 0xFF000000
 private const val RED_MASK: Long = 0x00FF0000
 private const val GREEN_MASK: Long = 0x0000FF00
 private const val BLUE_MASK: Long = 0x000000FF
+
+private fun Int.signedValue(): String = if (this > 0) "+$this" else toString()
+
+private fun Int.gammaValue(): String = "%d.%02d".format(this / 100, this % 100)

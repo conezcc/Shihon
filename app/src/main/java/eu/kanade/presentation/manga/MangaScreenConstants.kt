@@ -9,6 +9,22 @@ enum class DownloadAction {
     BOOKMARKED_CHAPTERS,
 }
 
+enum class MangaDownloadAction {
+    ALL_CHAPTERS,
+    UNREAD_CHAPTERS,
+    BOOKMARKED_CHAPTERS,
+    DELETE_DOWNLOADED_CHAPTERS,
+    CANCEL_DOWNLOADS,
+}
+
+enum class MangaPreprocessingAction {
+    ALL_CHAPTERS,
+    UNREAD_CHAPTERS,
+    BOOKMARKED_CHAPTERS,
+    DELETE_PREPROCESSED_CHAPTERS,
+    CANCEL_PREPROCESSING,
+}
+
 enum class EditCoverAction {
     EDIT,
     DELETE,

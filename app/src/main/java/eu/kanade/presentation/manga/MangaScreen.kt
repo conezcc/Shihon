@@ -88,6 +88,9 @@ fun MangaScreen(
     navigateUp: () -> Unit,
     onChapterClicked: (Chapter) -> Unit,
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+    onPreprocessingChapter: (
+        (List<ChapterList.Item>, eu.kanade.presentation.manga.components.ChapterPreprocessingAction) -> Unit
+    )?,
     onAddToLibraryClicked: () -> Unit,
     onWebViewClicked: (() -> Unit)?,
     onWebViewLongClicked: (() -> Unit)?,
@@ -106,7 +109,8 @@ fun MangaScreen(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
-    onDownloadActionClicked: ((DownloadAction) -> Unit)?,
+    onDownloadActionClicked: ((MangaDownloadAction) -> Unit)?,
+    onPreprocessingActionClicked: ((MangaPreprocessingAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
@@ -143,6 +147,7 @@ fun MangaScreen(
             navigateUp = navigateUp,
             onChapterClicked = onChapterClicked,
             onDownloadChapter = onDownloadChapter,
+            onPreprocessingChapter = onPreprocessingChapter,
             onAddToLibraryClicked = onAddToLibraryClicked,
             onWebViewClicked = onWebViewClicked,
             onWebViewLongClicked = onWebViewLongClicked,
@@ -156,6 +161,7 @@ fun MangaScreen(
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
             onDownloadActionClicked = onDownloadActionClicked,
+            onPreprocessingActionClicked = onPreprocessingActionClicked,
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
             onMigrateClicked = onMigrateClicked,
@@ -179,6 +185,7 @@ fun MangaScreen(
             navigateUp = navigateUp,
             onChapterClicked = onChapterClicked,
             onDownloadChapter = onDownloadChapter,
+            onPreprocessingChapter = onPreprocessingChapter,
             onAddToLibraryClicked = onAddToLibraryClicked,
             onWebViewClicked = onWebViewClicked,
             onWebViewLongClicked = onWebViewLongClicked,
@@ -192,6 +199,7 @@ fun MangaScreen(
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
             onDownloadActionClicked = onDownloadActionClicked,
+            onPreprocessingActionClicked = onPreprocessingActionClicked,
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
             onMigrateClicked = onMigrateClicked,
@@ -218,6 +226,9 @@ private fun MangaScreenSmallImpl(
     navigateUp: () -> Unit,
     onChapterClicked: (Chapter) -> Unit,
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+    onPreprocessingChapter: (
+        (List<ChapterList.Item>, eu.kanade.presentation.manga.components.ChapterPreprocessingAction) -> Unit
+    )?,
     onAddToLibraryClicked: () -> Unit,
     onWebViewClicked: (() -> Unit)?,
     onWebViewLongClicked: (() -> Unit)?,
@@ -237,7 +248,8 @@ private fun MangaScreenSmallImpl(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
-    onDownloadActionClicked: ((DownloadAction) -> Unit)?,
+    onDownloadActionClicked: ((MangaDownloadAction) -> Unit)?,
+    onPreprocessingActionClicked: ((MangaPreprocessingAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
@@ -296,7 +308,11 @@ private fun MangaScreenSmallImpl(
                 navigateUp = navigateUp,
                 onClickFilter = onFilterClicked,
                 onClickShare = onShareClicked,
+                downloadActionCounts = state.mangaDownloadActionCounts,
                 onClickDownload = onDownloadActionClicked,
+                preprocessingEnabled = state.preprocessingEnabled,
+                preprocessingActionCounts = state.mangaPreprocessingActionCounts,
+                onClickPreprocessing = onPreprocessingActionClicked,
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
@@ -441,6 +457,8 @@ private fun MangaScreenSmallImpl(
                         chapterSwipeEndAction = chapterSwipeEndAction,
                         onChapterClicked = onChapterClicked,
                         onDownloadChapter = onDownloadChapter,
+                        preprocessingEnabled = state.preprocessingEnabled,
+                        onPreprocessingChapter = onPreprocessingChapter,
                         onChapterSelected = onChapterSelected,
                         onChapterSwipe = onChapterSwipe,
                     )
@@ -460,6 +478,9 @@ fun MangaScreenLargeImpl(
     navigateUp: () -> Unit,
     onChapterClicked: (Chapter) -> Unit,
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+    onPreprocessingChapter: (
+        (List<ChapterList.Item>, eu.kanade.presentation.manga.components.ChapterPreprocessingAction) -> Unit
+    )?,
     onAddToLibraryClicked: () -> Unit,
     onWebViewClicked: (() -> Unit)?,
     onWebViewLongClicked: (() -> Unit)?,
@@ -479,7 +500,8 @@ fun MangaScreenLargeImpl(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
-    onDownloadActionClicked: ((DownloadAction) -> Unit)?,
+    onDownloadActionClicked: ((MangaDownloadAction) -> Unit)?,
+    onPreprocessingActionClicked: ((MangaPreprocessingAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
@@ -531,7 +553,11 @@ fun MangaScreenLargeImpl(
                 navigateUp = navigateUp,
                 onClickFilter = onFilterButtonClicked,
                 onClickShare = onShareClicked,
+                downloadActionCounts = state.mangaDownloadActionCounts,
                 onClickDownload = onDownloadActionClicked,
+                preprocessingEnabled = state.preprocessingEnabled,
+                preprocessingActionCounts = state.mangaPreprocessingActionCounts,
+                onClickPreprocessing = onPreprocessingActionClicked,
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
@@ -678,6 +704,8 @@ fun MangaScreenLargeImpl(
                                 chapterSwipeEndAction = chapterSwipeEndAction,
                                 onChapterClicked = onChapterClicked,
                                 onDownloadChapter = onDownloadChapter,
+                                preprocessingEnabled = state.preprocessingEnabled,
+                                onPreprocessingChapter = onPreprocessingChapter,
                                 onChapterSelected = onChapterSelected,
                                 onChapterSwipe = onChapterSwipe,
                             )
@@ -739,6 +767,10 @@ private fun LazyListScope.sharedChapterItems(
     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
     onChapterClicked: (Chapter) -> Unit,
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+    preprocessingEnabled: Boolean,
+    onPreprocessingChapter: (
+        (List<ChapterList.Item>, eu.kanade.presentation.manga.components.ChapterPreprocessingAction) -> Unit
+    )?,
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
 ) {
@@ -784,6 +816,10 @@ private fun LazyListScope.sharedChapterItems(
                     downloadIndicatorEnabled = !isAnyChapterSelected && !manga.isLocal(),
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { item.downloadProgress },
+                    preprocessingIndicatorVisible = preprocessingEnabled && !manga.isLocal(),
+                    preprocessingIndicatorEnabled = !isAnyChapterSelected && item.isDownloaded,
+                    preprocessingStateProvider = { item.preprocessingState },
+                    preprocessingProgressProvider = { item.preprocessingProgress },
                     chapterSwipeStartAction = chapterSwipeStartAction,
                     chapterSwipeEndAction = chapterSwipeEndAction,
                     onLongClick = {
@@ -800,6 +836,11 @@ private fun LazyListScope.sharedChapterItems(
                     },
                     onDownloadClick = if (onDownloadChapter != null) {
                         { onDownloadChapter(listOf(item), it) }
+                    } else {
+                        null
+                    },
+                    onPreprocessingClick = if (onPreprocessingChapter != null) {
+                        { onPreprocessingChapter(listOf(item), it) }
                     } else {
                         null
                     },

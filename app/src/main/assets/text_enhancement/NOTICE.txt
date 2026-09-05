@@ -1,0 +1,10 @@
+PP-OCRv5_mobile_det
+
+Copyright (c) PaddlePaddle Authors.
+Licensed under the Apache License 2.0.
+
+Source: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det
+Model SHA-256: A431985659DC921974177A95ADCFBB90FD9E51989A5E04D70D0B75F597B6E61D
+
+Shihon uses only the detector probability map. It does not recognize,
+extract, transmit, or store the text content of reader pages.

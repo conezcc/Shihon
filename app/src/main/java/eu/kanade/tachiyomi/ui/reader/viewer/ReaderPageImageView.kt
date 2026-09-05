@@ -16,7 +16,6 @@ import androidx.annotation.AttrRes
 import androidx.annotation.CallSuper
 import androidx.annotation.StyleRes
 import androidx.appcompat.widget.AppCompatImageView
-import androidx.core.os.postDelayed
 import androidx.core.view.isVisible
 import coil3.BitmapImage
 import coil3.asDrawable
@@ -28,6 +27,7 @@ import coil3.request.crossfade
 import coil3.size.Precision
 import coil3.size.ViewSizeResolver
 import com.davemorrissey.labs.subscaleview.ImageSource
+import com.davemorrissey.labs.subscaleview.ImageViewState
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.EASE_IN_OUT_QUAD
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.EASE_OUT_QUAD
@@ -39,6 +39,8 @@ import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonSubsamplingImageView
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
 import okio.BufferedSource
+import tachiyomi.core.common.util.system.ImageUtil
+import kotlin.math.roundToInt
 
 /**
  * A wrapper view for showing page image.
@@ -60,9 +62,22 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private var config: Config? = null
 
+    private var landscapeZoomRunnable: Runnable? = null
+
+    private var landscapeZoomPreparationRunnable: Runnable? = null
+
+    private var landscapeZoomOriginalScaleType: Int? = null
+
+    private var landscapeZoomGeneration = 0
+
+    private var landscapeZoomPreviewStarted = false
+
+    private var selectedForward: Boolean? = null
+
     var onImageLoaded: (() -> Unit)? = null
     var onImageLoadError: ((Throwable?) -> Unit)? = null
     var onScaleChanged: ((newScale: Float) -> Unit)? = null
+    var onViewportChanged: (() -> Unit)? = null
     var onViewClicked: (() -> Unit)? = null
 
     /**
@@ -92,51 +107,194 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     open fun onPageSelected(forward: Boolean) {
+        // Selection and image-ready notifications can both arrive for the same page.
+        // onReady handles a still-loading image; a duplicate must not reposition a
+        // running preview or a viewport that the reader has already panned.
+        if (selectedForward != null) return
+        selectedForward = forward
         with(pageView as? SubsamplingScaleImageView) {
             if (this == null) return
             if (isReady) {
-                landscapeZoom(forward)
-            } else {
-                setOnImageEventListener(
-                    object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                        override fun onReady() {
-                            setupZoom(config)
-                            landscapeZoom(forward)
-                            this@ReaderPageImageView.onImageLoaded()
-                        }
-
-                        override fun onImageLoadError(e: Exception) {
-                            onImageLoadError(e)
-                        }
-                    },
-                )
+                if (!applyPageCropProfile()) {
+                    positionForPageEntry(forward)
+                    landscapeZoom(forward)
+                }
             }
         }
     }
 
-    private fun SubsamplingScaleImageView.landscapeZoom(forward: Boolean) {
-        if (
-            config != null &&
-            config!!.landscapeZoom &&
-            config!!.minimumScaleType == SCALE_TYPE_CENTER_INSIDE &&
-            sWidth > sHeight &&
-            scale == minScale
-        ) {
-            handler?.postDelayed(500) {
-                val point = when (config!!.zoomStartPosition) {
-                    ZoomStartPosition.LEFT -> if (forward) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
-                    ZoomStartPosition.RIGHT -> if (forward) PointF(sWidth.toFloat(), 0F) else PointF(0F, 0F)
-                    ZoomStartPosition.CENTER -> center
-                }
-
-                val targetScale = height.toFloat() / sHeight.toFloat()
-                animateScaleAndCenter(targetScale, point)!!
-                    .withDuration(500)
-                    .withEasing(EASE_IN_OUT_QUAD)
-                    .withInterruptible(true)
-                    .start()
-            }
+    open fun onPageDeselected() {
+        selectedForward = null
+        val view = pageView as? SubsamplingScaleImageView
+        if (view == null || !view.resetLandscapeZoomPreview()) {
+            cancelLandscapeZoomPreview()
         }
+    }
+
+    private fun cancelLandscapeZoomPreview() {
+        clearLandscapeZoomPreviewCallbacks()
+        landscapeZoomPreviewStarted = false
+        landscapeZoomOriginalScaleType?.let { originalScaleType ->
+            (pageView as? SubsamplingScaleImageView)?.setMinimumScaleType(originalScaleType)
+        }
+        landscapeZoomOriginalScaleType = null
+    }
+
+    private fun clearLandscapeZoomPreviewCallbacks() {
+        landscapeZoomGeneration++
+        landscapeZoomRunnable?.let { pageView?.removeCallbacks(it) }
+        landscapeZoomRunnable = null
+        landscapeZoomPreparationRunnable?.let { pageView?.removeCallbacks(it) }
+        landscapeZoomPreparationRunnable = null
+    }
+
+    private fun SubsamplingScaleImageView.resetLandscapeZoomPreview(): Boolean {
+        val currentConfig = config ?: return false
+        if (
+            !currentConfig.landscapeZoom ||
+            !currentConfig.landscapeZoomPreview() ||
+            !isReady ||
+            sWidth <= sHeight ||
+            hasActivePageCropProfile()
+        ) {
+            return false
+        }
+
+        clearLandscapeZoomPreviewCallbacks()
+        landscapeZoomPreviewStarted = false
+        if (currentConfig.minimumScaleType != SCALE_TYPE_CENTER_INSIDE) {
+            landscapeZoomOriginalScaleType = currentConfig.minimumScaleType
+            setMinimumScaleType(SCALE_TYPE_CENTER_INSIDE)
+        }
+        setScaleAndCenter(
+            minOf(width.toFloat() / sWidth.toFloat(), height.toFloat() / sHeight.toFloat()),
+            PointF(sWidth / 2F, sHeight / 2F),
+        )
+        invalidate()
+        return true
+    }
+
+    private fun SubsamplingScaleImageView.landscapeZoom(forward: Boolean) {
+        val currentConfig = config
+        if (currentConfig == null || !currentConfig.landscapeZoom || sWidth <= sHeight) {
+            cancelLandscapeZoomPreview()
+            return
+        }
+
+        val preview = forward && currentConfig.landscapeZoomPreview()
+        if (preview && landscapeZoomPreviewStarted) return
+
+        clearLandscapeZoomPreviewCallbacks()
+        val generation = landscapeZoomGeneration
+        val startAtBeginning = forward || !currentConfig.navigatePageSegmentsBackward
+        val point = when (currentConfig.zoomStartPosition) {
+            ZoomStartPosition.LEFT -> if (startAtBeginning) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
+            ZoomStartPosition.RIGHT -> if (startAtBeginning) PointF(sWidth.toFloat(), 0F) else PointF(0F, 0F)
+            ZoomStartPosition.CENTER -> center
+        }
+        val targetScale = height.toFloat() / sHeight.toFloat()
+        if (preview) {
+            landscapeZoomPreviewStarted = true
+            val fullScale = minOf(
+                width.toFloat() / sWidth.toFloat(),
+                height.toFloat() / sHeight.toFloat(),
+            )
+            val fullCenter = PointF(sWidth / 2F, sHeight / 2F)
+            if (
+                currentConfig.minimumScaleType != SCALE_TYPE_CENTER_INSIDE &&
+                landscapeZoomOriginalScaleType == null
+            ) {
+                landscapeZoomOriginalScaleType = currentConfig.minimumScaleType
+                setMinimumScaleType(SCALE_TYPE_CENTER_INSIDE)
+            }
+            setScaleAndCenter(fullScale, fullCenter)
+            invalidate()
+
+            val preparation = object : Runnable {
+                override fun run() {
+                    if (landscapeZoomPreparationRunnable !== this) return
+                    if (!isReady || !isImageLoaded || !isVisibleOnScreen()) {
+                        postOnAnimation(this)
+                        return
+                    }
+
+                    setScaleAndCenter(fullScale, fullCenter)
+                    invalidate()
+                    postOnAnimation {
+                        postOnAnimation {
+                            if (landscapeZoomPreparationRunnable !== this) return@postOnAnimation
+                            landscapeZoomPreparationRunnable = null
+                            val zoom = Runnable {
+                                if (
+                                    generation != landscapeZoomGeneration ||
+                                    selectedForward != true ||
+                                    pageView !== this@landscapeZoom ||
+                                    !isReady
+                                ) {
+                                    return@Runnable
+                                }
+                                landscapeZoomRunnable = null
+                                val animation = animateScaleAndCenter(targetScale, point) ?: return@Runnable
+                                animation
+                                    .withDuration(LANDSCAPE_ZOOM_DURATION_MILLIS)
+                                    .withEasing(EASE_IN_OUT_QUAD)
+                                    .withInterruptible(true)
+                                    .withOnAnimationEventListener(
+                                        object : SubsamplingScaleImageView.DefaultOnAnimationEventListener() {
+                                            override fun onComplete() {
+                                                restoreLandscapeZoomScaleType(this@landscapeZoom, generation)
+                                            }
+
+                                            override fun onInterruptedByUser() {
+                                                restoreLandscapeZoomScaleType(this@landscapeZoom, generation)
+                                            }
+
+                                            override fun onInterruptedByNewAnim() {
+                                                restoreLandscapeZoomScaleType(this@landscapeZoom, generation)
+                                            }
+                                        },
+                                    )
+                                    .start()
+                            }
+                            landscapeZoomRunnable = zoom
+                            if (
+                                handler?.postDelayed(
+                                    zoom,
+                                    currentConfig.landscapeZoomPreviewDurationMillis(),
+                                ) != true
+                            ) {
+                                landscapeZoomRunnable = null
+                            }
+                        }
+                    }
+                }
+            }
+            landscapeZoomPreparationRunnable = preparation
+            postOnAnimation(preparation)
+        } else {
+            cancelLandscapeZoomPreview()
+            setScaleAndCenter(targetScale, point)
+        }
+    }
+
+    private fun restoreLandscapeZoomScaleType(view: SubsamplingScaleImageView, generation: Int) {
+        if (generation != landscapeZoomGeneration) return
+        val originalScaleType = landscapeZoomOriginalScaleType ?: return
+        landscapeZoomOriginalScaleType = null
+        view.setMinimumScaleType(originalScaleType)
+    }
+
+    private fun SubsamplingScaleImageView.positionForPageEntry(forward: Boolean) {
+        val currentConfig = config ?: return
+        if (!currentConfig.navigatePageSegments || (!forward && !currentConfig.navigatePageSegmentsBackward)) return
+        val entry = pageEntryPosition(forward, currentConfig.pageSegmentForwardHorizontalDirection)
+        setScaleAndCenter(
+            scale,
+            PointF(
+                if (entry.horizontal == PagePanDirection.LEFT) 0F else sWidth.toFloat(),
+                if (entry.vertical == PagePanDirection.UP) 0F else sHeight.toFloat(),
+            ),
+        )
     }
 
     fun setImage(drawable: Drawable, config: Config) {
@@ -161,65 +319,72 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
-    fun recycle() = pageView?.let {
-        when (it) {
-            is SubsamplingScaleImageView -> it.recycle()
-            is AppCompatImageView -> it.dispose()
-        }
-        it.isVisible = false
-    }
-
-    /**
-     * Check if the image can be panned to the left
-     */
-    fun canPanLeft(): Boolean = canPan { it.left }
-
-    /**
-     * Check if the image can be panned to the right
-     */
-    fun canPanRight(): Boolean = canPan { it.right }
-
-    /**
-     * Check whether the image can be panned.
-     * @param fn a function that returns the direction to check for
-     */
-    private fun canPan(fn: (RectF) -> Float): Boolean {
-        (pageView as? SubsamplingScaleImageView)?.let { view ->
-            RectF().let {
-                view.getPanRemaining(it)
-                return fn(it) > 1
+    fun recycle() {
+        selectedForward = null
+        cancelLandscapeZoomPreview()
+        pageView?.let {
+            when (it) {
+                is SubsamplingScaleImageView -> it.recycle()
+                is AppCompatImageView -> it.dispose()
             }
+            it.isVisible = false
         }
-        return false
+    }
+
+    fun setTextEnhancementMask(mask: android.graphics.Bitmap?, strength: Int) {
+        (pageView as? InkSubsamplingImageView)?.setTextEnhancementMask(mask, strength)
+            ?: mask?.recycle()
+    }
+
+    fun setTextEnhancementStrength(strength: Int) {
+        (pageView as? InkSubsamplingImageView)?.setTextEnhancementStrength(strength)
+    }
+
+    fun clearTextEnhancementMask() {
+        (pageView as? InkSubsamplingImageView)?.clearTextEnhancementMask()
     }
 
     /**
-     * Pans the image to the left by a screen's width worth.
+     * Moves to the next still-hidden part of an enlarged image. The axis with the most overflow
+     * is preferred so tall pages move vertically and wide pages move horizontally.
      */
-    fun panLeft() {
-        pan { center, view -> center.also { it.x -= view.width / view.scale } }
+    internal fun panForPageTurn(
+        horizontalDirection: PagePanDirection,
+        verticalDirection: PagePanDirection,
+        smoothly: Boolean,
+    ): Boolean {
+        val view = pageView as? SubsamplingScaleImageView ?: return false
+        if (!view.isReady) return false
+        if (view.hasActivePageCropProfile()) return false
+
+        val remaining = RectF().also(view::getPanRemaining)
+        val direction = selectPagePanDirection(
+            PagePanRemaining(remaining.left, remaining.top, remaining.right, remaining.bottom),
+            horizontalDirection,
+            verticalDirection,
+        ) ?: return false
+
+        view.pan(direction, smoothly)
+        return true
     }
 
-    /**
-     * Pans the image to the right by a screen's width worth.
-     */
-    fun panRight() {
-        pan { center, view -> center.also { it.x += view.width / view.scale } }
-    }
+    private fun SubsamplingScaleImageView.pan(direction: PagePanDirection, smoothly: Boolean) {
+        val currentCenter = center ?: return
+        val target = PointF(currentCenter.x, currentCenter.y)
+        when (direction) {
+            PagePanDirection.LEFT -> target.x -= width / scale
+            PagePanDirection.RIGHT -> target.x += width / scale
+            PagePanDirection.UP -> target.y -= height / scale
+            PagePanDirection.DOWN -> target.y += height / scale
+        }
 
-    /**
-     * Pans the image.
-     * @param fn a function that computes the new center of the image
-     */
-    private fun pan(fn: (PointF, SubsamplingScaleImageView) -> PointF) {
-        (pageView as? SubsamplingScaleImageView)?.let { view ->
-
-            val target = fn(view.center ?: return, view)
-            view.animateCenter(target)!!
-                .withEasing(EASE_OUT_QUAD)
-                .withDuration(250)
-                .withInterruptible(true)
-                .start()
+        if (smoothly) {
+            animateCenter(target)?.withEasing(EASE_OUT_QUAD)
+                ?.withDuration(PAN_DURATION_MILLIS)
+                ?.withInterruptible(true)
+                ?.start()
+        } else {
+            setScaleAndCenter(scale, target)
         }
     }
 
@@ -230,7 +395,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         pageView = if (isWebtoon) {
             WebtoonSubsamplingImageView(context)
         } else {
-            SubsamplingScaleImageView(context)
+            InkSubsamplingImageView(context)
         }.apply {
             setDoubleTapZoomStyle(SubsamplingScaleImageView.ZOOM_FOCUS_CENTER)
             setPanLimit(SubsamplingScaleImageView.PAN_LIMIT_INSIDE)
@@ -239,10 +404,11 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 object : SubsamplingScaleImageView.OnStateChangedListener {
                     override fun onScaleChanged(newScale: Float, origin: Int) {
                         this@ReaderPageImageView.onScaleChanged(newScale)
+                        onViewportChanged?.invoke()
                     }
 
                     override fun onCenterChanged(newCenter: PointF?, origin: Int) {
-                        // Not used
+                        onViewportChanged?.invoke()
                     }
                 },
             )
@@ -252,6 +418,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     private fun SubsamplingScaleImageView.setupZoom(config: Config?) {
+        isPanEnabled = true
+        isZoomEnabled = true
         // 5x zoom
         maxScale = scale * MAX_ZOOM_SCALE
         setDoubleTapZoomScale(scale * 2)
@@ -268,16 +436,61 @@ open class ReaderPageImageView @JvmOverloads constructor(
         data: Any,
         config: Config,
     ) = (pageView as? SubsamplingScaleImageView)?.apply {
+        cancelLandscapeZoomPreview()
         setDoubleTapZoomDuration(config.zoomDuration.getSystemScaledDuration())
-        setMinimumScaleType(config.minimumScaleType)
+        val imageDimensions = when (data) {
+            is BitmapDrawable -> ImageUtil.ImageDimensions(data.bitmap.width, data.bitmap.height)
+            is BufferedSource -> ImageUtil.getImageDimensions(data)
+            else -> null
+        }
+        val prepareLandscapeZoomPreview =
+            config.landscapeZoom &&
+                config.landscapeZoomPreview() &&
+                config.minimumScaleType != SCALE_TYPE_CENTER_INSIDE &&
+                imageDimensions != null &&
+                imageDimensions.width > imageDimensions.height
+        val initialPreviewState = if (prepareLandscapeZoomPreview) {
+            val dimensions = checkNotNull(imageDimensions)
+            ImageViewState(
+                0F,
+                PointF(dimensions.width / 2F, dimensions.height / 2F),
+            )
+        } else {
+            null
+        }
+        if (prepareLandscapeZoomPreview) {
+            landscapeZoomOriginalScaleType = config.minimumScaleType
+            setMinimumScaleType(SCALE_TYPE_CENTER_INSIDE)
+        } else {
+            setMinimumScaleType(config.minimumScaleType)
+        }
+        isVisible = true
         setMinimumDpi(1) // Just so that very small image will be fit for initial load
         setCropBorders(config.cropBorders)
         setOnImageEventListener(
             object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
                 override fun onReady() {
                     setupZoom(config)
-                    if (isVisibleOnScreen()) landscapeZoom(true)
+                    val pageCropApplied = applyPageCropProfile()
+                    if (!pageCropApplied) {
+                        val forward = selectedForward
+                        if (forward != null) {
+                            positionForPageEntry(forward)
+                            landscapeZoom(forward)
+                        } else {
+                            resetLandscapeZoomPreview()
+                        }
+                    } else {
+                        cancelLandscapeZoomPreview()
+                    }
                     this@ReaderPageImageView.onImageLoaded()
+                }
+
+                override fun onImageLoaded() {
+                    val forward = selectedForward
+                    if (!hasActivePageCropProfile() && forward != null) {
+                        landscapeZoom(forward)
+                    }
                 }
 
                 override fun onImageLoadError(e: Exception) {
@@ -288,13 +501,21 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
         when (data) {
             is BitmapDrawable -> {
-                setImage(ImageSource.bitmap(data.bitmap))
-                isVisible = true
+                val imageSource = ImageSource.bitmap(data.bitmap)
+                if (initialPreviewState != null) {
+                    setImage(imageSource, initialPreviewState)
+                } else {
+                    setImage(imageSource)
+                }
             }
             is BufferedSource -> {
                 if (!isWebtoon) {
-                    setImage(ImageSource.inputStream(data.inputStream()))
-                    isVisible = true
+                    val imageSource = ImageSource.inputStream(data.inputStream())
+                    if (initialPreviewState != null) {
+                        setImage(imageSource, initialPreviewState)
+                    } else {
+                        setImage(imageSource)
+                    }
                     return@apply
                 }
 
@@ -402,6 +623,70 @@ open class ReaderPageImageView @JvmOverloads constructor(
         return (this * context.animatorDurationScale).toInt().coerceAtLeast(1)
     }
 
+    fun currentPageCropState(): PageCropState? {
+        val view = pageView as? SubsamplingScaleImageView ?: return null
+        if (!view.isReady) return null
+        val profile = view.capturePageCropProfile() ?: return null
+        return profile.toState(
+            active = !config!!.cropBorders && config!!.pageCropProfileProvider(view.sWidth, view.sHeight) != null,
+        )
+    }
+
+    fun capturePageCropProfile(): PageCropProfile? {
+        val view = pageView as? SubsamplingScaleImageView ?: return null
+        if (!view.isReady) return null
+        return view.capturePageCropProfile()
+    }
+
+    fun resetPageCrop() {
+        val view = pageView as? SubsamplingScaleImageView ?: return
+        if (!view.isReady) return
+        view.resetScaleAndCenter()
+        view.setupZoom(config)
+        if (view.isVisibleOnScreen()) view.landscapeZoom(true)
+        onViewportChanged?.invoke()
+    }
+
+    private fun SubsamplingScaleImageView.capturePageCropProfile(): PageCropProfile? {
+        val imageCenter = center ?: return null
+        val ratio = PageAspectRatio.fromDimensions(sWidth, sHeight) ?: return null
+        if (width <= 0 || height <= 0 || scale <= 0F) return null
+        val visibleWidth = width / scale
+        val visibleHeight = height / scale
+        return PageCropProfile(
+            ratio = ratio,
+            scaleByViewWidth = scale * sWidth / width,
+            centerX = (imageCenter.x / sWidth).coerceIn(0F, 1F),
+            centerY = (imageCenter.y / sHeight).coerceIn(0F, 1F),
+            top = ((imageCenter.y - visibleHeight / 2F) / sHeight).coerceIn(0F, 1F),
+            bottom = ((sHeight - imageCenter.y - visibleHeight / 2F) / sHeight).coerceIn(0F, 1F),
+            left = ((imageCenter.x - visibleWidth / 2F) / sWidth).coerceIn(0F, 1F),
+            right = ((sWidth - imageCenter.x - visibleWidth / 2F) / sWidth).coerceIn(0F, 1F),
+        )
+    }
+
+    private fun SubsamplingScaleImageView.applyPageCropProfile(): Boolean {
+        val currentConfig = config ?: return false
+        if (currentConfig.cropBorders) return false
+        val ratio = PageAspectRatio.fromDimensions(sWidth, sHeight) ?: return false
+        val profile = currentConfig.pageCropProfileProvider(ratio.width, ratio.height) ?: return false
+        if (width <= 0 || sWidth <= 0) return false
+        val targetScale = (profile.scaleByViewWidth * width / sWidth).coerceIn(minScale, maxScale)
+        setScaleAndCenter(
+            targetScale,
+            PointF(profile.centerX * sWidth, profile.centerY * sHeight),
+        )
+        isPanEnabled = false
+        isZoomEnabled = false
+        return true
+    }
+
+    private fun SubsamplingScaleImageView.hasActivePageCropProfile(): Boolean {
+        val currentConfig = config ?: return false
+        if (currentConfig.cropBorders) return false
+        return currentConfig.pageCropProfileProvider(sWidth, sHeight) != null
+    }
+
     /**
      * All of the config except [zoomDuration] will only be used for non-animated image.
      */
@@ -411,6 +696,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
         val cropBorders: Boolean = false,
         val zoomStartPosition: ZoomStartPosition = ZoomStartPosition.CENTER,
         val landscapeZoom: Boolean = false,
+        val landscapeZoomPreview: () -> Boolean = { false },
+        val landscapeZoomPreviewDurationMillis: () -> Long = { 1200L },
+        val navigatePageSegments: Boolean = false,
+        val navigatePageSegmentsBackward: Boolean = false,
+        val pageSegmentForwardHorizontalDirection: PagePanDirection = PagePanDirection.RIGHT,
+        val pageCropProfileProvider: (Int, Int) -> PageCropProfile? = { _, _ -> null },
     )
 
     enum class ZoomStartPosition {
@@ -421,3 +712,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
 }
 
 private const val MAX_ZOOM_SCALE = 5F
+private const val PAN_DURATION_MILLIS = 250L
+private const val LANDSCAPE_ZOOM_DURATION_MILLIS = 500L
+
+private fun PageCropProfile.toState(active: Boolean) = PageCropState(
+    available = true,
+    active = active,
+    ratio = ratio,
+    topPercent = (top * 100).roundToInt(),
+    bottomPercent = (bottom * 100).roundToInt(),
+    leftPercent = (left * 100).roundToInt(),
+    rightPercent = (right * 100).roundToInt(),
+)

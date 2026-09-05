@@ -1,5 +1,5 @@
-# i18n
+# Shihon translations
 
-This module houses the string resources and translations.
+English source strings are in `src/commonMain/moko-resources/base/`; Simplified Chinese in `zh-rCN/` and Japanese in `ja/`.
 
-Original English strings are managed in `src/commonMain/moko-resources/base/`. Translations are done externally via Weblate. See [our website](https://mihon.app/docs/contribute#translation) for more details. 
+Maintain Shihon-specific translations through this repository's pull requests. Keep all three languages complete and preserve format placeholders. Run `python3 scripts/check_translations.py` from the repository root before submitting. Other translations inherited from Mihon remain available; Mihon's upstream Weblate project does not manage Shihon additions.

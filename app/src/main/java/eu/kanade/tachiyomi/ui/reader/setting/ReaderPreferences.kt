@@ -20,7 +20,32 @@ class ReaderPreferences(
 
     // region General
 
+    private val legacyPageTransitionModeWasStored = "pref_page_transition_mode" in preferenceStore.getAll()
+    private val legacyPageTransitionMode: Preference<LegacyPageTransitionMode> = preferenceStore.getEnum(
+        "pref_page_transition_mode",
+        LegacyPageTransitionMode.SLIDE,
+    )
+
     val pageTransitions: Preference<Boolean> = preferenceStore.getBoolean("pref_enable_transitions_key", true)
+
+    val waterRipplePageTransitions: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_water_ripple_page_transitions",
+        false,
+    )
+
+    val waterRippleSpeed: Preference<WaterRippleSpeed> = preferenceStore.getEnum(
+        "pref_water_ripple_speed",
+        WaterRippleSpeed.STANDARD,
+    )
+
+    init {
+        val transitionModeMigrated = preferenceStore.getBoolean("pref_page_transition_mode_migrated", false)
+        if (legacyPageTransitionModeWasStored && !transitionModeMigrated.get()) {
+            pageTransitions.set(legacyPageTransitionMode.get() != LegacyPageTransitionMode.NONE)
+            waterRipplePageTransitions.set(legacyPageTransitionMode.get() == LegacyPageTransitionMode.WATER_RIPPLE)
+            transitionModeMigrated.set(true)
+        }
+    }
 
     val flashOnPageChange: Preference<Boolean> = preferenceStore.getBoolean("pref_reader_flash", false)
 
@@ -85,9 +110,40 @@ class ReaderPreferences(
 
     val cropBorders: Preference<Boolean> = preferenceStore.getBoolean("crop_borders", false)
 
+    val pageCropProfiles: Preference<String> = preferenceStore.getString("page_crop_profiles", "")
+
     val navigateToPan: Preference<Boolean> = preferenceStore.getBoolean("navigate_pan", true)
 
+    val landscapeZoomPreviewDurationMillis: Preference<Int> = preferenceStore.getInt(
+        "landscape_zoom_preview_duration_millis",
+        LANDSCAPE_ZOOM_PREVIEW_DURATION_DEFAULT_MILLIS,
+    )
+
+    val navigatePageSegments: Preference<Boolean> = preferenceStore.getBoolean("navigate_page_segments", false)
+
+    val navigatePageSegmentsBackward: Preference<Boolean> = preferenceStore.getBoolean(
+        "navigate_page_segments_backward",
+        false,
+    )
+
+    val navigatePageSegmentsSmoothly: Preference<Boolean> = preferenceStore.getBoolean(
+        "navigate_page_segments_smoothly",
+        true,
+    )
+
     val landscapeZoom: Preference<Boolean> = preferenceStore.getBoolean("landscape_zoom", true)
+
+    val disablePagerSwipe: Preference<Boolean> = preferenceStore.getBoolean("pager_disable_swipe", false)
+
+    val pagerHorizontalPadding: Preference<Int> = preferenceStore.getInt(
+        "pager_horizontal_padding",
+        PAGER_PADDING_MIN,
+    )
+
+    val pagerVerticalPadding: Preference<Int> = preferenceStore.getInt(
+        "pager_vertical_padding",
+        PAGER_PADDING_MIN,
+    )
 
     val cropBordersWebtoon: Preference<Boolean> = preferenceStore.getBoolean("crop_borders_webtoon", false)
 
@@ -160,6 +216,41 @@ class ReaderPreferences(
 
     val invertedColors: Preference<Boolean> = preferenceStore.getBoolean("pref_inverted_colors", false)
 
+    val imageBrightness: Preference<Int> = preferenceStore.getInt(
+        "pref_image_brightness",
+        ImageProcessing.BRIGHTNESS_DEFAULT,
+    )
+
+    val imageContrast: Preference<Int> = preferenceStore.getInt(
+        "pref_image_contrast",
+        ImageProcessing.CONTRAST_DEFAULT,
+    )
+
+    val imageGamma: Preference<Int> = preferenceStore.getInt(
+        "pref_image_gamma",
+        ImageProcessing.GAMMA_DEFAULT,
+    )
+
+    val textEnhancement: Preference<Int> = preferenceStore.getInt(
+        "pref_line_enhancement",
+        ImageProcessing.TEXT_ENHANCEMENT_DEFAULT,
+    )
+
+    val preprocessingEnabled: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_text_enhancement_masks_enabled",
+        false,
+    )
+
+    val automaticPreprocessing: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_automatic_preprocessing",
+        false,
+    )
+
+    val preprocessingThreads: Preference<Int> = preferenceStore.getInt(
+        "pref_preprocessing_threads",
+        PREPROCESSING_THREADS_DEFAULT,
+    )
+
     // endregion
 
     // region Controls
@@ -220,6 +311,14 @@ class ReaderPreferences(
         WHITE,
         WHITE_BLACK,
     }
+
+    enum class WaterRippleSpeed(val titleRes: StringResource, val commandFlag: Int) {
+        SLOW(MR.strings.water_ripple_speed_slow, 128),
+        STANDARD(MR.strings.water_ripple_speed_standard, 64),
+        FAST(MR.strings.water_ripple_speed_fast, 0),
+    }
+
+    private enum class LegacyPageTransitionMode { NONE, SLIDE, WATER_RIPPLE }
 
     enum class TappingInvertMode(
         val titleRes: StringResource,
@@ -286,7 +385,21 @@ class ReaderPreferences(
         const val WEBTOON_PADDING_MIN = 0
         const val WEBTOON_PADDING_MAX = 25
 
+        const val PAGER_PADDING_MIN = 0
+        const val PAGER_PADDING_MAX = 20
+        const val PAGER_PADDING_PERCENTAGE_DIVISOR = 200f
+
+        const val PREPROCESSING_THREADS_MIN = 1
+        const val PREPROCESSING_THREADS_MAX = 8
+        const val PREPROCESSING_THREADS_DEFAULT = 2
+
         const val MILLI_CONVERSION = 100
+
+        const val LANDSCAPE_ZOOM_PREVIEW_DURATION_DEFAULT_MILLIS = 1200
+        const val LANDSCAPE_ZOOM_PREVIEW_DURATION_MIN_MILLIS = 0
+        const val LANDSCAPE_ZOOM_PREVIEW_DURATION_MAX_MILLIS = 3000
+        const val LANDSCAPE_ZOOM_PREVIEW_DURATION_STEP_MILLIS = 100
+        val LANDSCAPE_ZOOM_PREVIEW_DURATION_STEPS = 0..30
 
         val TapZones = listOf(
             MR.strings.label_default,

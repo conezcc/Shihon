@@ -1,6 +1,12 @@
 package eu.kanade.presentation.reader.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -8,13 +14,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import eu.kanade.tachiyomi.ui.reader.viewer.PageCropState
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
 import mihon.app.di.appGraph
@@ -22,6 +32,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.CheckboxItem
 import tachiyomi.presentation.core.components.HeadingItem
 import tachiyomi.presentation.core.components.SettingsChipRow
+import tachiyomi.presentation.core.components.SettingsItemsPaddings
 import tachiyomi.presentation.core.components.SliderItem
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -134,9 +145,36 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
         }
     }
 
-    CheckboxItem(
-        label = stringResource(MR.strings.pref_crop_borders),
-        pref = viewModel.preferences.cropBorders,
+    val numberFormat = remember { NumberFormat.getPercentInstance() }
+    val secondsFormat = remember {
+        NumberFormat.getNumberInstance().apply {
+            minimumFractionDigits = 1
+            maximumFractionDigits = 1
+        }
+    }
+    val previewDurationStep = ReaderPreferences.LANDSCAPE_ZOOM_PREVIEW_DURATION_STEP_MILLIS
+    val pagerHorizontalPadding by viewModel.preferences.pagerHorizontalPadding.collectAsState()
+    SliderItem(
+        value = pagerHorizontalPadding,
+        valueRange = ReaderPreferences.let { it.PAGER_PADDING_MIN..it.PAGER_PADDING_MAX },
+        label = stringResource(MR.strings.pref_pager_horizontal_padding),
+        valueString = numberFormat.format(
+            pagerHorizontalPadding / ReaderPreferences.PAGER_PADDING_PERCENTAGE_DIVISOR,
+        ),
+        onChange = viewModel.preferences.pagerHorizontalPadding::set,
+        pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
+
+    val pagerVerticalPadding by viewModel.preferences.pagerVerticalPadding.collectAsState()
+    SliderItem(
+        value = pagerVerticalPadding,
+        valueRange = ReaderPreferences.let { it.PAGER_PADDING_MIN..it.PAGER_PADDING_MAX },
+        label = stringResource(MR.strings.pref_pager_vertical_padding),
+        valueString = numberFormat.format(
+            pagerVerticalPadding / ReaderPreferences.PAGER_PADDING_PERCENTAGE_DIVISOR,
+        ),
+        onChange = viewModel.preferences.pagerVerticalPadding::set,
+        pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     )
 
     CheckboxItem(
@@ -144,9 +182,59 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
         pref = viewModel.preferences.landscapeZoom,
     )
 
+    val landscapeZoomPreview by viewModel.preferences.navigateToPan.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_navigate_pan),
         pref = viewModel.preferences.navigateToPan,
+    )
+    if (landscapeZoomPreview) {
+        val durationPref = viewModel.preferences.landscapeZoomPreviewDurationMillis
+        val duration by durationPref.collectAsState()
+        SliderItem(
+            value = duration / previewDurationStep,
+            valueRange = ReaderPreferences.LANDSCAPE_ZOOM_PREVIEW_DURATION_STEPS,
+            label = stringResource(MR.strings.pref_landscape_zoom_preview_duration),
+            valueString = stringResource(
+                MR.strings.pref_landscape_zoom_preview_duration_value,
+                secondsFormat.format(duration / 1000.0),
+            ),
+            onChange = { durationPref.set(it * previewDurationStep) },
+            pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+    }
+
+    val navigatePageSegments by viewModel.preferences.navigatePageSegments.collectAsState()
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_navigate_page_segments),
+        pref = viewModel.preferences.navigatePageSegments,
+    )
+    if (navigatePageSegments) {
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_navigate_page_segments_backward),
+            pref = viewModel.preferences.navigatePageSegmentsBackward,
+        )
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_navigate_page_segments_smoothly),
+            pref = viewModel.preferences.navigatePageSegmentsSmoothly,
+        )
+    }
+
+    val pageCropState by viewModel.pageCropState.collectAsState()
+    CurrentScaleCropItem(
+        state = pageCropState,
+        onClick = viewModel::toggleCurrentPageCrop,
+    )
+
+    val cropBorders by viewModel.preferences.cropBorders.collectAsState()
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_crop_borders),
+        checked = cropBorders,
+        onClick = viewModel::toggleCropBorders,
+    )
+
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_disable_pager_swipe),
+        pref = viewModel.preferences.disablePagerSwipe,
     )
 
     val dualPageSplitPaged by viewModel.preferences.dualPageSplitPaged.collectAsState()
@@ -242,6 +330,49 @@ private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel
         label = stringResource(MR.strings.pref_webtoon_disable_zoom_out),
         pref = viewModel.preferences.webtoonDisableZoomOut,
     )
+}
+
+@Composable
+private fun CurrentScaleCropItem(
+    state: PageCropState,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = state.available, onClick = onClick)
+            .padding(
+                horizontal = SettingsItemsPaddings.Horizontal,
+                vertical = SettingsItemsPaddings.Vertical,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = state.active,
+            enabled = state.available,
+            onCheckedChange = null,
+            modifier = Modifier.padding(end = 24.dp),
+        )
+        Text(
+            text = stringResource(MR.strings.pref_crop_current_zoom),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.weight(1F))
+        if (state.available) {
+            Text(
+                text = stringResource(
+                    MR.strings.pref_crop_current_zoom_summary,
+                    state.ratio.toString(),
+                    state.topPercent,
+                    state.bottomPercent,
+                    state.leftPercent,
+                    state.rightPercent,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
 }
 
 @Composable

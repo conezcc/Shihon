@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.data.download.model.Download
+import eu.kanade.tachiyomi.data.preprocessing.model.PreprocessingTask
 import me.saket.swipe.SwipeableActionsBox
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.BookmarkAdd
@@ -57,11 +58,16 @@ fun MangaChapterListItem(
     downloadIndicatorEnabled: Boolean,
     downloadStateProvider: () -> Download.State,
     downloadProgressProvider: () -> Int,
+    preprocessingIndicatorVisible: Boolean,
+    preprocessingIndicatorEnabled: Boolean,
+    preprocessingStateProvider: () -> PreprocessingTask.State,
+    preprocessingProgressProvider: () -> Int,
     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
+    onPreprocessingClick: ((ChapterPreprocessingAction) -> Unit)?,
     onChapterSwipe: (LibraryPreferences.ChapterSwipeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -171,9 +177,16 @@ fun MangaChapterListItem(
                 }
             }
 
+            ChapterPreprocessingIndicator(
+                visible = preprocessingIndicatorVisible,
+                enabled = preprocessingIndicatorEnabled,
+                modifier = Modifier.padding(start = 4.dp),
+                stateProvider = preprocessingStateProvider,
+                progressProvider = preprocessingProgressProvider,
+                onClick = { onPreprocessingClick?.invoke(it) },
+            )
             ChapterDownloadIndicator(
                 enabled = downloadIndicatorEnabled,
-                modifier = Modifier.padding(start = 4.dp),
                 downloadStateProvider = downloadStateProvider,
                 downloadProgressProvider = downloadProgressProvider,
                 onClick = { onDownloadClick?.invoke(it) },

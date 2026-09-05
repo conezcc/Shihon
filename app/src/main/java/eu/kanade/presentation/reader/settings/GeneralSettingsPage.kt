@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import eu.kanade.tachiyomi.util.system.SmartOsPageTurnEffect
 import eu.kanade.tachiyomi.util.system.hasDisplayCutout
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.CheckboxItem
@@ -127,10 +128,32 @@ internal fun ColumnScope.GeneralPage(viewModel: ReaderSettingsViewModel) {
         pref = viewModel.preferences.alwaysShowChapterTransition,
     )
 
+    val pageTransitions by viewModel.preferences.pageTransitions.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_page_transitions),
-        pref = viewModel.preferences.pageTransitions,
+        checked = pageTransitions,
+        onClick = { viewModel.preferences.pageTransitions.set(!pageTransitions) },
     )
+
+    if (pageTransitions && SmartOsPageTurnEffect.isSupported) {
+        val waterRipple by viewModel.preferences.waterRipplePageTransitions.collectAsState()
+        val waterRippleSpeed by viewModel.preferences.waterRippleSpeed.collectAsState()
+        CheckboxItem(
+            label = stringResource(MR.strings.page_transition_water_ripple),
+            checked = waterRipple,
+            onClick = { viewModel.preferences.waterRipplePageTransitions.set(!waterRipple) },
+            trailingContent = if (waterRipple) {
+                {
+                    WaterRippleSpeedOptions(
+                        selectedSpeed = waterRippleSpeed,
+                        onSpeedSelected = viewModel.preferences.waterRippleSpeed::set,
+                    )
+                }
+            } else {
+                null
+            },
+        )
+    }
 
     CheckboxItem(
         label = stringResource(MR.strings.pref_flash_page),

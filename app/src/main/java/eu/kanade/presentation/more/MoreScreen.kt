@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.ui.more.DownloadQueueState
+import eu.kanade.tachiyomi.ui.more.ChapterTaskQueueState
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.automirroredrounded.Help
 import mihon.icons.materialsymbols.automirroredrounded.Label
@@ -18,6 +18,7 @@ import mihon.icons.materialsymbols.rounded.CloudOff
 import mihon.icons.materialsymbols.rounded.Download
 import mihon.icons.materialsymbols.rounded.Info
 import mihon.icons.materialsymbols.rounded.QueryStats
+import mihon.icons.materialsymbols.rounded.RocketLaunch
 import mihon.icons.materialsymbols.rounded.Settings
 import mihon.icons.materialsymbols.rounded.Storage
 import mihon.icons.materialsymbols.rounded.VolunteerActivism
@@ -30,12 +31,14 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun MoreScreen(
-    downloadQueueStateProvider: () -> DownloadQueueState,
+    downloadQueueStateProvider: () -> ChapterTaskQueueState,
+    preprocessingQueueStateProvider: () -> ChapterTaskQueueState,
     downloadedOnly: Boolean,
     onDownloadedOnlyChange: (Boolean) -> Unit,
     incognitoMode: Boolean,
     onIncognitoModeChange: (Boolean) -> Unit,
     onClickDownloadQueue: () -> Unit,
+    onClickPreprocessingQueue: () -> Unit,
     onClickCategories: () -> Unit,
     onClickStats: () -> Unit,
     onClickDataAndStorage: () -> Unit,
@@ -78,8 +81,8 @@ fun MoreScreen(
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.label_download_queue),
                     subtitle = when (downloadQueueState) {
-                        DownloadQueueState.Stopped -> null
-                        is DownloadQueueState.Paused -> {
+                        ChapterTaskQueueState.Stopped -> null
+                        is ChapterTaskQueueState.Paused -> {
                             val pending = downloadQueueState.pending
                             if (pending == 0) {
                                 stringResource(MR.strings.paused)
@@ -93,13 +96,37 @@ fun MoreScreen(
                                 }"
                             }
                         }
-                        is DownloadQueueState.Downloading -> {
+                        is ChapterTaskQueueState.Running -> {
                             val pending = downloadQueueState.pending
                             pluralStringResource(MR.plurals.download_queue_summary, count = pending, pending)
                         }
                     },
                     icon = MaterialSymbols.Rounded.Download,
                     onPreferenceClick = onClickDownloadQueue,
+                )
+            }
+            item {
+                val queueState = preprocessingQueueStateProvider()
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.preprocessing_queue),
+                    subtitle = when (queueState) {
+                        ChapterTaskQueueState.Stopped -> null
+                        is ChapterTaskQueueState.Paused -> {
+                            val pending = pluralStringResource(
+                                MR.plurals.preprocessing_queue_summary,
+                                count = queueState.pending,
+                                queueState.pending,
+                            )
+                            "${stringResource(MR.strings.paused)} · $pending"
+                        }
+                        is ChapterTaskQueueState.Running -> pluralStringResource(
+                            MR.plurals.preprocessing_queue_summary,
+                            count = queueState.pending,
+                            queueState.pending,
+                        )
+                    },
+                    icon = MaterialSymbols.Rounded.RocketLaunch,
+                    onPreferenceClick = onClickPreprocessingQueue,
                 )
             }
             item {

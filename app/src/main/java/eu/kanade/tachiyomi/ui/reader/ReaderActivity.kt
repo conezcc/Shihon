@@ -9,6 +9,8 @@ import android.content.Intent
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.RenderEffect
+import android.graphics.RuntimeShader
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,10 +18,12 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.View.LAYER_TYPE_HARDWARE
+import android.view.View.LAYER_TYPE_NONE
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -46,6 +50,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.transition.platform.MaterialContainerTransform
 import dev.zacsweers.metro.Inject
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
@@ -68,6 +73,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Success
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.setting.ImageProcessing
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
@@ -107,6 +113,42 @@ class ReaderActivity : BaseActivity() {
     private val graph: AppGraph by lazy { metroGraph() }
 
     companion object {
+        private const val IMAGE_FILTER_SHADER = """
+            uniform shader content;
+            uniform float grayscale;
+            uniform float inverted;
+            uniform float brightness;
+            uniform float contrast;
+            uniform float gamma;
+
+            float3 applyTone(float3 rgb) {
+                rgb = clamp(rgb, float3(0.0), float3(1.0));
+                if (grayscale > 0.5) {
+                    float luminance = dot(rgb, float3(0.213, 0.715, 0.072));
+                    rgb = float3(luminance);
+                }
+                rgb = clamp(
+                    (rgb - float3(0.5)) * contrast + float3(0.5 + brightness),
+                    float3(0.0),
+                    float3(1.0)
+                );
+                if (gamma != 1.0) {
+                    rgb = pow(rgb, float3(gamma));
+                }
+                return rgb;
+            }
+
+            half4 main(float2 coord) {
+                half4 color = content.eval(coord);
+                float3 rgb = applyTone(float3(color.rgb));
+
+                if (inverted > 0.5) {
+                    rgb = float3(1.0) - rgb;
+                }
+                return half4(half3(clamp(rgb, float3(0.0), float3(1.0))), color.a);
+            }
+        """
+
         fun newIntent(context: Context, mangaId: Long?, chapterId: Long?): Intent {
             return Intent(context, ReaderActivity::class.java).apply {
                 putExtra("manga", mangaId)
@@ -205,7 +247,9 @@ class ReaderActivity : BaseActivity() {
 
         viewModel.state
             .map { it.manga }
-            .distinctUntilChanged()
+            .distinctUntilChanged { old, new ->
+                old?.id == new?.id && old?.readingMode == new?.readingMode
+            }
             .filterNotNull()
             .onEach { updateViewer() }
             .launchIn(lifecycleScope)
@@ -824,17 +868,67 @@ class ReaderActivity : BaseActivity() {
         setPadding(insets.left, insets.top, insets.right, insets.bottom)
     }
 
+    private data class ImageFilterSettings(
+        val grayscale: Boolean,
+        val invertedColors: Boolean,
+        val brightness: Int,
+        val contrast: Int,
+        val gamma: Int,
+    )
+
     /**
      * Class that handles the user preferences of the reader.
      */
     private inner class ReaderConfig {
 
-        private fun getCombinedPaint(grayscale: Boolean, invertedColors: Boolean): Paint {
+        @get:RequiresApi(Build.VERSION_CODES.TIRAMISU)
+        private val imageFilterShader by lazy { RuntimeShader(IMAGE_FILTER_SHADER) }
+
+        private var runtimeShaderUnavailable = false
+        private fun getCombinedPaint(
+            grayscale: Boolean,
+            invertedColors: Boolean,
+            brightness: Int,
+            contrast: Int,
+            gamma: Int,
+        ): Paint {
             return Paint().apply {
                 colorFilter = ColorMatrixColorFilter(
                     ColorMatrix().apply {
                         if (grayscale) {
                             setSaturation(0f)
+                        }
+                        if (
+                            brightness != ImageProcessing.BRIGHTNESS_DEFAULT ||
+                            contrast != ImageProcessing.CONTRAST_DEFAULT
+                        ) {
+                            val contrastFactor = ImageProcessing.contrast(contrast)
+                            val brightnessOffset = ImageProcessing.brightness(brightness)
+                            val translation = 255f * (0.5f - 0.5f * contrastFactor + brightnessOffset)
+                            postConcat(
+                                ColorMatrix(
+                                    floatArrayOf(
+                                        contrastFactor, 0f, 0f, 0f, translation,
+                                        0f, contrastFactor, 0f, 0f, translation,
+                                        0f, 0f, contrastFactor, 0f, translation,
+                                        0f, 0f, 0f, 1f, 0f,
+                                    ),
+                                ),
+                            )
+                        }
+                        if (gamma != ImageProcessing.GAMMA_DEFAULT) {
+                            val gammaContrast = ImageProcessing.fallbackGammaContrast(gamma)
+                            val translation = 255f * (1f - gammaContrast)
+                            postConcat(
+                                ColorMatrix(
+                                    floatArrayOf(
+                                        gammaContrast, 0f, 0f, 0f, translation,
+                                        0f, gammaContrast, 0f, 0f, translation,
+                                        0f, 0f, gammaContrast, 0f, translation,
+                                        0f, 0f, 0f, 1f, 0f,
+                                    ),
+                                ),
+                            )
                         }
                         if (invertedColors) {
                             postConcat(
@@ -874,9 +968,20 @@ class ReaderActivity : BaseActivity() {
             combine(
                 readerPreferences.grayscale.changes(),
                 readerPreferences.invertedColors.changes(),
-            ) { grayscale, invertedColors -> grayscale to invertedColors }
-                .onEach { (grayscale, invertedColors) ->
-                    setLayerPaint(grayscale, invertedColors)
+                readerPreferences.imageBrightness.changes(),
+                readerPreferences.imageContrast.changes(),
+                readerPreferences.imageGamma.changes(),
+            ) { grayscale, invertedColors, brightness, contrast, gamma ->
+                ImageFilterSettings(
+                    grayscale = grayscale,
+                    invertedColors = invertedColors,
+                    brightness = brightness,
+                    contrast = contrast,
+                    gamma = gamma,
+                )
+            }
+                .onEach { settings ->
+                    setImageFilters(settings)
                 }
                 .launchIn(lifecycleScope)
 
@@ -936,9 +1041,66 @@ class ReaderActivity : BaseActivity() {
 
             viewModel.setBrightnessOverlayValue(value)
         }
-        private fun setLayerPaint(grayscale: Boolean, invertedColors: Boolean) {
-            val paint = if (grayscale || invertedColors) getCombinedPaint(grayscale, invertedColors) else null
-            binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
+        private fun setImageFilters(settings: ImageFilterSettings) {
+            val runtimeImageFiltersApplied =
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !runtimeShaderUnavailable &&
+                    setRuntimeImageFilters(settings)
+            if (runtimeImageFiltersApplied) {
+                binding.viewerContainer.setLayerType(LAYER_TYPE_NONE, null)
+                return
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                binding.viewerContainer.setRenderEffect(null)
+            }
+            val hasFilter = settings.grayscale ||
+                settings.invertedColors ||
+                settings.brightness != ImageProcessing.BRIGHTNESS_DEFAULT ||
+                settings.contrast != ImageProcessing.CONTRAST_DEFAULT ||
+                settings.gamma != ImageProcessing.GAMMA_DEFAULT
+            val paint = if (hasFilter) {
+                getCombinedPaint(
+                    grayscale = settings.grayscale,
+                    invertedColors = settings.invertedColors,
+                    brightness = settings.brightness,
+                    contrast = settings.contrast,
+                    gamma = settings.gamma,
+                )
+            } else {
+                null
+            }
+            binding.viewerContainer.setLayerType(
+                if (hasFilter) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE,
+                paint,
+            )
+        }
+
+        @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+        private fun setRuntimeImageFilters(settings: ImageFilterSettings): Boolean {
+            return runCatching {
+                val hasFilter = settings.grayscale ||
+                    settings.invertedColors ||
+                    settings.brightness != ImageProcessing.BRIGHTNESS_DEFAULT ||
+                    settings.contrast != ImageProcessing.CONTRAST_DEFAULT ||
+                    settings.gamma != ImageProcessing.GAMMA_DEFAULT
+                if (!hasFilter) {
+                    binding.viewerContainer.setRenderEffect(null)
+                    return@runCatching
+                }
+
+                imageFilterShader.setFloatUniform("grayscale", if (settings.grayscale) 1f else 0f)
+                imageFilterShader.setFloatUniform("inverted", if (settings.invertedColors) 1f else 0f)
+                imageFilterShader.setFloatUniform("brightness", ImageProcessing.brightness(settings.brightness))
+                imageFilterShader.setFloatUniform("contrast", ImageProcessing.contrast(settings.contrast))
+                imageFilterShader.setFloatUniform("gamma", ImageProcessing.gamma(settings.gamma))
+                binding.viewerContainer.setRenderEffect(
+                    RenderEffect.createRuntimeShaderEffect(imageFilterShader, "content"),
+                )
+            }.onFailure {
+                runtimeShaderUnavailable = true
+                logcat(LogPriority.ERROR, it) { "Failed to apply the GPU image filter" }
+            }.isSuccess
         }
     }
 }

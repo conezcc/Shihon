@@ -106,9 +106,16 @@ object ImageUtil {
      * @return true if the width is greater than the height
      */
     fun isWideImage(imageSource: BufferedSource): Boolean {
-        val options = extractImageOptions(imageSource)
-        return options.outWidth > options.outHeight
+        val dimensions = getImageDimensions(imageSource)
+        return dimensions.width > dimensions.height
     }
+
+    fun getImageDimensions(imageSource: BufferedSource): ImageDimensions {
+        val options = extractImageOptions(imageSource)
+        return ImageDimensions(options.outWidth, options.outHeight)
+    }
+
+    data class ImageDimensions(val width: Int, val height: Int)
 
     /**
      * Extract the 'side' part from [BufferedSource] and return it as [BufferedSource].

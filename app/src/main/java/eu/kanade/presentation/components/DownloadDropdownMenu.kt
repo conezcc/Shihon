@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpOffset
 import eu.kanade.presentation.manga.DownloadAction
+import eu.kanade.presentation.manga.MangaDownloadAction
+import eu.kanade.presentation.manga.MangaPreprocessingAction
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
@@ -41,6 +43,89 @@ fun DownloadDropdownMenu(
                     onDismissRequest = onDismissRequest,
                     onDownloadClicked = onDownloadClicked,
                 )
+            },
+        )
+    }
+}
+
+@Composable
+fun MangaDownloadDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    actionCounts: Map<MangaDownloadAction, Int>,
+    onDownloadClicked: (MangaDownloadAction) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+    ) {
+        val options = listOf(
+            MangaDownloadAction.ALL_CHAPTERS to stringResource(MR.strings.all),
+            MangaDownloadAction.UNREAD_CHAPTERS to stringResource(MR.strings.download_unread),
+            MangaDownloadAction.BOOKMARKED_CHAPTERS to stringResource(MR.strings.download_bookmarked),
+            MangaDownloadAction.DELETE_DOWNLOADED_CHAPTERS to stringResource(MR.strings.delete_downloaded),
+            MangaDownloadAction.CANCEL_DOWNLOADS to stringResource(MR.strings.action_cancel),
+        )
+        MangaChapterTaskDropdownMenuItems(
+            options = options,
+            actionCounts = actionCounts,
+            onDismissRequest = onDismissRequest,
+            onActionClicked = onDownloadClicked,
+        )
+    }
+}
+
+@Composable
+fun MangaPreprocessingDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    actionCounts: Map<MangaPreprocessingAction, Int>,
+    onPreprocessingClicked: (MangaPreprocessingAction) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+    ) {
+        val options = listOf(
+            MangaPreprocessingAction.ALL_CHAPTERS to stringResource(MR.strings.build_all),
+            MangaPreprocessingAction.UNREAD_CHAPTERS to stringResource(MR.strings.preprocess_unread),
+            MangaPreprocessingAction.BOOKMARKED_CHAPTERS to stringResource(MR.strings.preprocess_bookmarked),
+            MangaPreprocessingAction.DELETE_PREPROCESSED_CHAPTERS to
+                stringResource(MR.strings.delete_preprocessed),
+            MangaPreprocessingAction.CANCEL_PREPROCESSING to stringResource(MR.strings.action_cancel),
+        )
+        MangaChapterTaskDropdownMenuItems(
+            options = options,
+            actionCounts = actionCounts,
+            onDismissRequest = onDismissRequest,
+            onActionClicked = onPreprocessingClicked,
+        )
+    }
+}
+
+@Composable
+private fun <T> MangaChapterTaskDropdownMenuItems(
+    options: List<Pair<T, String>>,
+    actionCounts: Map<T, Int>,
+    onDismissRequest: () -> Unit,
+    onActionClicked: (T) -> Unit,
+) {
+    options.forEach { (action, label) ->
+        val count = actionCounts[action] ?: 0
+        DropdownMenuItem(
+            text = {
+                Text(
+                    if (count > 0) {
+                        stringResource(MR.strings.manga_chapter_action_count, label, count)
+                    } else {
+                        label
+                    },
+                )
+            },
+            enabled = count > 0,
+            onClick = {
+                onActionClicked(action)
+                onDismissRequest()
             },
         )
     }

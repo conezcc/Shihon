@@ -5,7 +5,6 @@ import mihon.gradle.getLatestCommitSha
 import mihon.gradle.tasks.ReplaceShortcutsPlaceholderTask
 import java.io.FileInputStream
 import java.util.Properties
-import kotlin.io.encoding.Base64
 
 plugins {
     alias(mihonx.plugins.android.application)
@@ -31,10 +30,10 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.mihon"
+        applicationId = "app.shihon"
 
-        versionCode = 29
-        versionName = "0.20.4"
+        versionCode = 2
+        versionName = "1.0.0"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -45,44 +44,37 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    if (System.getenv("MIHON_GITHUB_RELEASE").toBoolean()) {
-        val tempStoreFile = file(System.getenv("RUNNER_TEMP")).resolve("antsy.keystore")
-
-        val storeFileBytes = System.getenv("storeFileBase64").let(Base64::decode)
-        tempStoreFile.outputStream().use { it.write(storeFileBytes) }
-
-        signingConfigs {
-            named("debug") {
-                storeFile = tempStoreFile
-                storePassword = System.getenv("storePassword")
-                keyAlias = System.getenv("keyAlias")
-                keyPassword = System.getenv("keyPassword")
-            }
+    val releaseStore = System.getenv("SHIHON_KEYSTORE_PATH")
+    val releaseSigning = if (!releaseStore.isNullOrBlank()) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseStore)
+            storePassword = requireNotNull(System.getenv("SHIHON_STORE_PASSWORD"))
+            keyAlias = requireNotNull(System.getenv("SHIHON_KEY_ALIAS"))
+            keyPassword = requireNotNull(System.getenv("SHIHON_KEY_PASSWORD"))
         }
     } else if (keystorePropertiesFile.exists()) {
         val keystoreProperties = FileInputStream(keystorePropertiesFile).use { Properties().apply { load(it) } }
 
-        signingConfigs {
-            named("debug") {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-            }
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+            storePassword = keystoreProperties.getProperty("storePassword")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
         }
+    } else {
+        null
     }
 
     buildTypes {
         val debug = getByName("debug") {
             applicationIdSuffix = ".dev"
-            versionNameSuffix = "-${getLatestCommitCount()}"
             isPseudoLocalesEnabled = true
         }
         val release = getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
 
-            signingConfig = debug.signingConfig
+            signingConfig = releaseSigning
 
             isProfileable = true
 
@@ -129,9 +121,9 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            isUniversalApk = false
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include("arm64-v8a")
         }
     }
 
@@ -296,6 +288,7 @@ dependencies {
         exclude(module = "image-decoder")
     }
     implementation(libs.image.decoder)
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.webgpuviewer)
     implementation(libs.kim)
@@ -340,6 +333,15 @@ dependencies {
 
 androidComponents {
     onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters.singleOrNull()?.identifier ?: "universal"
+            output.outputFileName.set(
+                output.versionName.map { versionName ->
+                    "Shihon-v$versionName-$abi-${variant.name}.apk"
+                },
+            )
+        }
+
         val resSource = variant.sources.res ?: return@onVariants
 
         val variantName = variant.name.replaceFirstChar { it.uppercase() }

@@ -113,6 +113,9 @@ class MangaScreen(
             navigateUp = navigator::pop,
             onChapterClicked = { openChapter(context, it) },
             onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
+            onPreprocessingChapter = viewModel::runChapterPreprocessingAction.takeIf {
+                !successState.source.isLocalOrStub() && successState.preprocessingEnabled
+            },
             onAddToLibraryClicked = {
                 viewModel.toggleFavorite()
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -145,7 +148,12 @@ class MangaScreen(
             onSearch = { query, global -> scope.launch { performSearch(navigator, query, global) } },
             onCoverClicked = viewModel::showCoverDialog,
             onShareClicked = { shareManga(context, viewModel.manga, viewModel.source) }.takeIf { isHttpSource },
-            onDownloadActionClicked = viewModel::runDownloadAction.takeIf { !successState.source.isLocalOrStub() },
+            onDownloadActionClicked = viewModel::runMangaDownloadAction.takeIf {
+                !successState.source.isLocalOrStub()
+            },
+            onPreprocessingActionClicked = viewModel::runMangaPreprocessingAction.takeIf {
+                !successState.source.isLocalOrStub() && successState.preprocessingEnabled
+            },
             onEditCategoryClicked = viewModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
             onEditFetchIntervalClicked = viewModel::showSetFetchIntervalDialog.takeIf {
                 successState.manga.favorite

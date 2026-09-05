@@ -69,4 +69,7 @@
     <plurals name="notification_update_error">
         <item quantity="other">%1$d 件の更新が失敗しました</item>
     </plurals>
+    <plurals name="preprocessing_queue_summary">
+        <item quantity="other">%d チャプターが前処理待ち</item>
+    </plurals>
 </resources>

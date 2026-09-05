@@ -14,12 +14,15 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
-import eu.kanade.presentation.components.DownloadDropdownMenu
-import eu.kanade.presentation.manga.DownloadAction
+import eu.kanade.presentation.components.MangaDownloadDropdownMenu
+import eu.kanade.presentation.components.MangaPreprocessingDropdownMenu
+import eu.kanade.presentation.manga.MangaDownloadAction
+import eu.kanade.presentation.manga.MangaPreprocessingAction
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Download
 import mihon.icons.materialsymbols.rounded.FilterList
 import mihon.icons.materialsymbols.rounded.FlipToBack
+import mihon.icons.materialsymbols.rounded.RocketLaunch
 import mihon.icons.materialsymbols.rounded.SelectAll
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -32,7 +35,11 @@ fun MangaToolbar(
     navigateUp: () -> Unit,
     onClickFilter: () -> Unit,
     onClickShare: (() -> Unit)?,
-    onClickDownload: ((DownloadAction) -> Unit)?,
+    downloadActionCounts: Map<MangaDownloadAction, Int>,
+    onClickDownload: ((MangaDownloadAction) -> Unit)?,
+    preprocessingEnabled: Boolean,
+    preprocessingActionCounts: Map<MangaPreprocessingAction, Int>,
+    onClickPreprocessing: ((MangaPreprocessingAction) -> Unit)?,
     onClickEditCategory: (() -> Unit)?,
     onClickRefresh: () -> Unit,
     onClickMigrate: (() -> Unit)?,
@@ -64,12 +71,22 @@ fun MangaToolbar(
         navigateUp = navigateUp,
         actions = {
             var downloadExpanded by remember { mutableStateOf(false) }
+            var preprocessingExpanded by remember { mutableStateOf(false) }
             if (onClickDownload != null) {
                 val onDismissRequest = { downloadExpanded = false }
-                DownloadDropdownMenu(
+                MangaDownloadDropdownMenu(
                     expanded = downloadExpanded,
                     onDismissRequest = onDismissRequest,
+                    actionCounts = downloadActionCounts,
                     onDownloadClicked = onClickDownload,
+                )
+            }
+            if (preprocessingEnabled && onClickPreprocessing != null) {
+                MangaPreprocessingDropdownMenu(
+                    expanded = preprocessingExpanded,
+                    onDismissRequest = { preprocessingExpanded = false },
+                    actionCounts = preprocessingActionCounts,
+                    onPreprocessingClicked = onClickPreprocessing,
                 )
             }
 
@@ -94,11 +111,28 @@ fun MangaToolbar(
                         return@buildList
                     }
                     if (onClickDownload != null) {
+                        if (preprocessingEnabled && onClickPreprocessing != null) {
+                            add(
+                                AppBar.Action(
+                                    title = stringResource(MR.strings.preprocessing),
+                                    icon = MaterialSymbols.Rounded.RocketLaunch,
+                                    onClick = { preprocessingExpanded = !preprocessingExpanded },
+                                ),
+                            )
+                        }
                         add(
                             AppBar.Action(
                                 title = stringResource(MR.strings.manga_download),
                                 icon = MaterialSymbols.Rounded.Download,
                                 onClick = { downloadExpanded = !downloadExpanded },
+                            ),
+                        )
+                    } else if (preprocessingEnabled && onClickPreprocessing != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.preprocessing),
+                                icon = MaterialSymbols.Rounded.RocketLaunch,
+                                onClick = { preprocessingExpanded = !preprocessingExpanded },
                             ),
                         )
                     }

@@ -55,6 +55,12 @@ open class Pager(
     private var isGestureDetectorEnabled = true
 
     /**
+     * Whether a one-finger drag can be intercepted to turn pages. Child views keep receiving
+     * touch events when this is disabled, so pinch-to-zoom continues to work.
+     */
+    var isSwipeEnabled = true
+
+    /**
      * Dispatches a touch event.
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
@@ -70,6 +76,8 @@ open class Pager(
      * views manipulate [requestDisallowInterceptTouchEvent].
      */
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (!isSwipeEnabled) return false
+
         return try {
             super.onInterceptTouchEvent(ev)
         } catch (e: IllegalArgumentException) {

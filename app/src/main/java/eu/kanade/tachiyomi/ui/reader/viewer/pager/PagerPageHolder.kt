@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.view.LayoutInflater
 import androidx.core.view.isVisible
 import eu.kanade.presentation.util.formattedMessage
@@ -9,6 +10,10 @@ import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.tachiyomi.ui.reader.setting.ImageProcessing
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.viewer.ChapterPreprocessingArtifacts
+import eu.kanade.tachiyomi.ui.reader.viewer.PageAspectRatio
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
@@ -28,6 +33,7 @@ import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
+import kotlin.math.roundToInt
 
 /**
  * View of the ViewPager that contains a page of a chapter.
@@ -62,8 +68,35 @@ class PagerPageHolder(
      */
     private var loadJob: Job? = null
 
+    private var textEnhancementJob: Job? = null
+    private var buildUpdateJob: Job? = null
+    private var hasTextEnhancementMask = false
+    private var textEnhancementSupported = false
+
     init {
+        onViewportChanged = { viewer.onPageViewportChanged(this) }
         loadJob = scope.launch { loadPageAndProcessStatus() }
+        buildUpdateJob = scope.launch {
+            ChapterPreprocessingArtifacts.pageChanges.collect { change ->
+                val pageIndex = (page as? InsertPage)?.parent?.index ?: page.index
+                if (change.chapterId == page.chapter.chapter.id && change.pageIndex == pageIndex) {
+                    textEnhancementJob?.cancel()
+                    textEnhancementJob = null
+                    updateTextEnhancement(viewer.config.textEnhancement)
+                }
+            }
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        val horizontalPadding = (
+            w * viewer.config.pagerHorizontalPadding / ReaderPreferences.PAGER_PADDING_PERCENTAGE_DIVISOR
+            ).roundToInt()
+        val verticalPadding = (
+            h * viewer.config.pagerVerticalPadding / ReaderPreferences.PAGER_PADDING_PERCENTAGE_DIVISOR
+            ).roundToInt()
+        setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
     }
 
     /**
@@ -74,6 +107,13 @@ class PagerPageHolder(
         super.onDetachedFromWindow()
         loadJob?.cancel()
         loadJob = null
+        textEnhancementJob?.cancel()
+        textEnhancementJob = null
+        buildUpdateJob?.cancel()
+        buildUpdateJob = null
+        hasTextEnhancementMask = false
+        textEnhancementSupported = false
+        clearTextEnhancementMask()
     }
 
     private fun initProgressIndicator() {
@@ -150,7 +190,7 @@ class PagerPageHolder(
         val streamFn = page.stream ?: return
 
         try {
-            val (source, isAnimated, background) = withIOContext {
+            val image = withIOContext {
                 val source = streamFn().use { process(item, Buffer().readFrom(it)) }
                 val isAnimated = ImageUtil.isAnimatedAndSupported(source)
                 val background = if (!isAnimated && viewer.config.automaticBackground) {
@@ -158,23 +198,37 @@ class PagerPageHolder(
                 } else {
                     null
                 }
-                Triple(source, isAnimated, background)
+                LoadedPageImage(source, isAnimated, background)
             }
             withUIContext {
-                setImage(
-                    source,
-                    isAnimated,
-                    Config(
-                        zoomDuration = viewer.config.doubleTapAnimDuration,
-                        minimumScaleType = viewer.config.imageScaleType,
-                        cropBorders = viewer.config.imageCropBorders,
-                        zoomStartPosition = viewer.config.imageZoomType,
-                        landscapeZoom = viewer.config.landscapeZoom,
-                    ),
+                val config = Config(
+                    zoomDuration = viewer.config.doubleTapAnimDuration,
+                    minimumScaleType = viewer.config.imageScaleType,
+                    cropBorders = viewer.config.imageCropBorders,
+                    zoomStartPosition = viewer.config.imageZoomType,
+                    landscapeZoom = viewer.config.landscapeZoom,
+                    landscapeZoomPreview = { viewer.config.landscapeZoomPreview },
+                    landscapeZoomPreviewDurationMillis = {
+                        viewer.config.landscapeZoomPreviewDurationMillis
+                    },
+                    navigatePageSegments = viewer.config.navigatePageSegments,
+                    navigatePageSegmentsBackward = viewer.config.navigatePageSegmentsBackward,
+                    pageSegmentForwardHorizontalDirection = if (viewer is R2LPagerViewer) {
+                        eu.kanade.tachiyomi.ui.reader.viewer.PagePanDirection.LEFT
+                    } else {
+                        eu.kanade.tachiyomi.ui.reader.viewer.PagePanDirection.RIGHT
+                    },
+                    pageCropProfileProvider = { width, height ->
+                        PageAspectRatio.fromDimensions(width, height)
+                            ?.let(viewer.config.pageCropProfiles::get)
+                    },
                 )
-                if (!isAnimated) {
-                    pageBackground = background
+                setImage(image.source, image.isAnimated, config)
+                textEnhancementSupported = !image.isAnimated
+                if (!image.isAnimated) {
+                    pageBackground = image.background
                 }
+                updateTextEnhancement(viewer.config.textEnhancement)
                 removeErrorLayout()
             }
         } catch (e: Throwable) {
@@ -185,7 +239,11 @@ class PagerPageHolder(
         }
     }
 
-    private fun process(page: ReaderPage, imageSource: BufferedSource): BufferedSource {
+    private fun process(
+        page: ReaderPage,
+        imageSource: BufferedSource,
+        notifyPageSplit: Boolean = true,
+    ): BufferedSource {
         if (viewer.config.dualPageRotateToFit) {
             return rotateDualPage(imageSource)
         }
@@ -203,7 +261,7 @@ class PagerPageHolder(
             return imageSource
         }
 
-        onPageSplit(page)
+        if (notifyPageSplit) onPageSplit(page)
 
         return splitInHalf(imageSource)
     }
@@ -242,6 +300,43 @@ class PagerPageHolder(
         viewer.onPageSplit(page, newPage)
     }
 
+    fun updateTextEnhancement(strength: Int) {
+        setTextEnhancementStrength(strength)
+        if (strength <= ImageProcessing.TEXT_ENHANCEMENT_MIN) {
+            textEnhancementJob?.cancel()
+            textEnhancementJob = null
+            hasTextEnhancementMask = false
+            clearTextEnhancementMask()
+            return
+        }
+        if (!textEnhancementSupported) {
+            return
+        }
+        if (hasTextEnhancementMask || textEnhancementJob?.isActive == true) {
+            return
+        }
+
+        textEnhancementJob = scope.launch {
+            val mask = withIOContext {
+                val pageIndex = (page as? InsertPage)?.parent?.index ?: page.index
+                ChapterPreprocessingArtifacts.loadPage(context, page.chapter.chapter.id!!, pageIndex)
+            }
+            if (mask == null) return@launch
+            if (viewer.config.textEnhancement <= ImageProcessing.TEXT_ENHANCEMENT_MIN) {
+                mask.recycle()
+                return@launch
+            }
+            hasTextEnhancementMask = true
+            setTextEnhancementMask(mask, viewer.config.textEnhancement)
+        }
+    }
+
+    private data class LoadedPageImage(
+        val source: BufferedSource,
+        val isAnimated: Boolean,
+        val background: Drawable?,
+    )
+
     /**
      * Called when the page has an error.
      */
@@ -253,6 +348,8 @@ class PagerPageHolder(
     override fun onImageLoaded() {
         super.onImageLoaded()
         progressIndicator?.hide()
+        viewer.onPageViewportChanged(this)
+        viewer.onPageImageReady(this)
     }
 
     /**

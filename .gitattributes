@@ -20,5 +20,6 @@
 *.ttf binary
 *.eot binary
 *.woff binary
+*.onnx binary
 *.pyc binary
 *.swp binary

@@ -25,8 +25,10 @@ import eu.kanade.presentation.more.MoreScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.preprocessing.PreprocessingManager
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
+import eu.kanade.tachiyomi.ui.preprocessing.PreprocessingQueueScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,13 +64,16 @@ data object MoreTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val viewModel = metroViewModel<MoreViewModel>()
         val downloadQueueState by viewModel.downloadQueueState.collectAsState()
+        val preprocessingQueueState by viewModel.preprocessingQueueState.collectAsState()
         MoreScreen(
             downloadQueueStateProvider = { downloadQueueState },
+            preprocessingQueueStateProvider = { preprocessingQueueState },
             downloadedOnly = viewModel.downloadedOnly,
             onDownloadedOnlyChange = { viewModel.downloadedOnly = it },
             incognitoMode = viewModel.incognitoMode,
             onIncognitoModeChange = { viewModel.incognitoMode = it },
             onClickDownloadQueue = { navigator.push(DownloadQueueScreen) },
+            onClickPreprocessingQueue = { navigator.push(PreprocessingQueueScreen) },
             onClickCategories = { navigator.push(CategoryScreen()) },
             onClickStats = { navigator.push(StatsScreen()) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
@@ -85,13 +90,17 @@ data object MoreTab : Tab {
 class MoreViewModel(
     private val downloadManager: DownloadManager,
     preferences: BasePreferences,
+    private val preprocessingManager: PreprocessingManager,
 ) : ViewModel() {
 
     var downloadedOnly by preferences.downloadedOnly.asState(viewModelScope)
     var incognitoMode by preferences.incognitoMode.asState(viewModelScope)
 
-    private var _downloadQueueState: MutableStateFlow<DownloadQueueState> = MutableStateFlow(DownloadQueueState.Stopped)
-    val downloadQueueState: StateFlow<DownloadQueueState> = _downloadQueueState.asStateFlow()
+    private var _downloadQueueState: MutableStateFlow<ChapterTaskQueueState> =
+        MutableStateFlow(ChapterTaskQueueState.Stopped)
+    val downloadQueueState: StateFlow<ChapterTaskQueueState> = _downloadQueueState.asStateFlow()
+    private val _preprocessingQueueState = MutableStateFlow<ChapterTaskQueueState>(ChapterTaskQueueState.Stopped)
+    val preprocessingQueueState: StateFlow<ChapterTaskQueueState> = _preprocessingQueueState.asStateFlow()
 
     init {
         // Handle running/paused status change and queue progress updating
@@ -103,17 +112,30 @@ class MoreViewModel(
                 .collectLatest { (isDownloading, downloadQueueSize) ->
                     val pendingDownloadExists = downloadQueueSize != 0
                     _downloadQueueState.value = when {
-                        !pendingDownloadExists -> DownloadQueueState.Stopped
-                        !isDownloading -> DownloadQueueState.Paused(downloadQueueSize)
-                        else -> DownloadQueueState.Downloading(downloadQueueSize)
+                        !pendingDownloadExists -> ChapterTaskQueueState.Stopped
+                        !isDownloading -> ChapterTaskQueueState.Paused(downloadQueueSize)
+                        else -> ChapterTaskQueueState.Running(downloadQueueSize)
+                    }
+                }
+        }
+        viewModelScope.launchIO {
+            combine(
+                preprocessingManager.isRunning,
+                preprocessingManager.queueState,
+            ) { isRunning, queue -> isRunning to queue.size }
+                .collectLatest { (isRunning, count) ->
+                    _preprocessingQueueState.value = when {
+                        count == 0 -> ChapterTaskQueueState.Stopped
+                        !isRunning -> ChapterTaskQueueState.Paused(count)
+                        else -> ChapterTaskQueueState.Running(count)
                     }
                 }
         }
     }
 }
 
-sealed interface DownloadQueueState {
-    data object Stopped : DownloadQueueState
-    data class Paused(val pending: Int) : DownloadQueueState
-    data class Downloading(val pending: Int) : DownloadQueueState
+sealed interface ChapterTaskQueueState {
+    data object Stopped : ChapterTaskQueueState
+    data class Paused(val pending: Int) : ChapterTaskQueueState
+    data class Running(val pending: Int) : ChapterTaskQueueState
 }
