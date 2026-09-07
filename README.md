@@ -21,6 +21,8 @@ Shihon（紙本）是基于 [Mihon](https://github.com/mihonapp/mihon) 的 Andro
 - **安装与更新**：安装 APK；后续正式版使用相同发布签名，可覆盖更新。
 - **完整性校验**：发布附件提供 `SHA256SUMS.txt`。
 
+视频中使用的 **SmartOS 检测器 v1.2**：[下载 APK](https://github.com/conezcc/Shihon/raw/refs/heads/main/tools/SmartOSProbe/SmartOSProbe-v1.2-release.apk)。
+
 ## Shihon 新增功能
 
 ### 水波纹翻页
